@@ -1,0 +1,35 @@
+MIT License
+
+Copyright (c) 2026 tianshi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+关于题库内容的额外说明：
+
+本许可证仅覆盖本项目自身的源代码（安卓壳、前端实现、构建脚本等）。
+
+- 题库题目内容整理自《王道 2027 考研复习指导》（王道论坛），版权归原作者及出版方所有，
+  不在本 MIT 许可证授权范围内，仅供个人学习使用。
+- 原始 Web 版刷题网站由 zsc5725216-hub 开发（https://github.com/zsc5725216-hub/408-quiz），
+  其授权以其原仓库声明为准。
+
+使用约定：本项目完全免费，任何人不得以任何形式售卖，不得用于付费课程、
+付费题库或商业引流，请勿去除原作者与移植者的署名信息。

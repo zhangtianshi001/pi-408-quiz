@@ -1,0 +1,31 @@
+# ---- 构建中间产物 ----
+.build/
+dist/*.apk
+dist/*.idsig
+*.keystore
+*.jks
+*.apk
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ---- JS ----
+node_modules/
+package-lock.json
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 临时文件 ----
+*.log
+*.tmp
+shots/

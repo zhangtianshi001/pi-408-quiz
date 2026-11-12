@@ -50,17 +50,21 @@ button{font-family:inherit;font-size:inherit;color:inherit;border:none;backgroun
 .splash{
   position:fixed;inset:0;z-index:120;background:var(--bg);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
-  transition:opacity .45s var(--ease),visibility .45s;
+  transition:opacity .28s var(--ease),visibility .28s;
 }
 .splash.out{opacity:0;visibility:hidden}
 .splash-pi{
   font-size:76px;font-weight:300;color:var(--acc);line-height:1;
   font-family:Georgia,"Times New Roman",serif;
-  animation:piIn .9s var(--ease) both;
+  animation:piIn .52s var(--ease) both;
+  text-shadow:0 8px 30px rgba(79,110,247,.16);
 }
-.splash-name{font-size:15px;letter-spacing:.28em;color:var(--ink3);animation:fadeUp .8s .18s var(--ease) both}
-@keyframes piIn{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
+.splash-name{font-size:15px;letter-spacing:.28em;color:var(--ink3);animation:fadeUp .36s .12s var(--ease) both}
+@keyframes piIn{0%{opacity:0;transform:scale(.72) rotate(-8deg)}65%{opacity:1;transform:scale(1.06) rotate(2deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
 
 /* ---------- 协议 ---------- */
 .eula{

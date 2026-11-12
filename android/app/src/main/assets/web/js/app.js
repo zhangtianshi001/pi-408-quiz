@@ -269,10 +269,19 @@
     $$('#tabbar .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === st.v));
     cleanupFloating();
     Promise.resolve(view(page, st.p, st)).then(() => {
+      if (cur() !== st || $('#page') !== page) return;
       if (st.keepScroll) window.scrollTo(0, st.sc || 0);
       else window.scrollTo(0, 0);
+      if (st.v === 'home' && nav.stack.length === 1) finishStartup();
     }).catch(e => {
-      page.innerHTML = '<div class="empty"><div class="ico">!</div>加载失败：' + esc(e.message) + '</div>';
+      if (cur() !== st || $('#page') !== page) return;
+      page.innerHTML = '<div class="empty"><div class="ico">!</div>题库暂时无法加载<br><button class="btn-primary" id="retry-load" style="margin-top:16px">重试</button></div>';
+      const retry = $('#retry-load');
+      if (retry) retry.onclick = () => {
+        SUBJECTS.forEach(s => { delete loading[s.id]; delete D[s.id]; delete IDX[s.id]; });
+        render(false);
+      };
+      if (st.v === 'home' && nav.stack.length === 1) finishStartup();
     });
   }
 
@@ -532,6 +541,10 @@
 
   function renderQ() {
     if (!Q) return;
+    // 结果页的固定操作条挂在 #app 下，重绘下一题时需先清除，
+    // 否则它会覆盖新题的「看答案 / 提交」按钮。
+    const oldActionbar = $('.actionbar', $('#app'));
+    if (oldActionbar) oldActionbar.remove();
     const it = Q.items[Q.i];
     const q = getQ(it);
     const wrap = $('#qwrap');
@@ -617,6 +630,8 @@
     if (revealed) {
       if (mode === MODE_VIEW) {
         wrap.insertAdjacentHTML('beforeend', ansBlock(ans, q[3]));
+      } else if (rec.peek) {
+        wrap.insertAdjacentHTML('beforeend', ansBlock(ans, q[3]));
       } else {
         wrap.insertAdjacentHTML('beforeend',
           resBlock(!!rec.ok, ans, rec.mine || '', q[3]));
@@ -643,8 +658,6 @@
     $('#btn-peek').onclick = () => {
       const rec2 = { ok: 0, mine: '', peek: 1 };
       Q.done[qid(it)] = rec2;
-      posSet(it.s, it.c, it.k, it.n, false, '');
-      wrongAdd(it, '（未作答）', ans);
       haptic();
       renderQ();
     };
@@ -1234,13 +1247,23 @@
     applyTheme();
     applyFont();
     const agreed = (function () { try { return localStorage.getItem(EULA_KEY) === '1'; } catch (e) { return false; } })();
-    // splash 淡出
+    startupAt = Date.now();
+    if (!agreed) showEula(true);
+    initNav();
+  }
+  let startupAt = 0, startupFinished = false;
+  function finishStartup() {
+    if (startupFinished) return;
+    startupFinished = true;
+    const elapsed = Date.now() - startupAt;
+    const wait = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 0 : Math.max(0, 520 - elapsed);
     setTimeout(() => {
       const sp = $('#splash');
-      if (sp) { sp.classList.add('out'); setTimeout(() => sp.remove(), 500); }
-      if (!agreed) showEula(true); else showEulaIfNeeded();
-      initNav();
-    }, 620);
+      if (!sp) return;
+      sp.classList.add('out');
+      setTimeout(() => sp.remove(), 280);
+    }, wait);
   }
   function showEulaIfNeeded() { /* 已同意则不显示 */ }
 

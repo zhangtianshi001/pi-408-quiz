@@ -9,7 +9,7 @@
   ];
   const LS = {
     pos: 'p408.pos.v1', wrong: 'p408.wrong.v1', fav: 'p408.fav.v1',
-    set: 'p408.set.v1', eula: 'p408.eula.v1', plans: 'p408.plans.v1', study: 'p408.study.v1', library: 'p408.library.eula.v1'
+    set: 'p408.set.v1', eula: 'p408.eula.v2.1', plans: 'p408.plans.v1', study: 'p408.study.v1', library: 'p408.library.eula.v1'
   };
   const MODE_VIEW = 'view', MODE_DO = 'do';
 
@@ -1107,19 +1107,18 @@
       h += '</div>';
 
       h += '<div class="sec-title">数据与关于</div><div class="list">' +
-        '<button class="li" id="act-update"><span class="li-main"><span class="li-t">更新说明</span><span class="li-s">V2.0 正式版</span></span><span class="li-r"><i class="chev"></i></span></button>' +
+        '<button class="li" id="act-update"><span class="li-main"><span class="li-t">更新说明</span><span class="li-s">V2.1</span></span><span class="li-r"><i class="chev"></i></span></button>' +
         '<button class="li" id="act-eula"><span class="li-main"><span class="li-t">使用协议与致谢</span>' +
         '<span class="li-s">开源项目说明</span></span><span class="li-r"><i class="chev"></i></span></button>' +
         '<button class="li" id="act-export"><span class="li-main"><span class="li-t">导出学习数据</span>' +
         '<span class="li-s">选择错题或收藏，复制纯文本</span></span><span class="li-r"><i class="chev"></i></span></button>' +
-        '<button class="li" id="act-donate"><span class="li-num">☕</span><span class="li-main"><span class="li-t">请作者喝咖啡</span><span class="li-s">感谢支持独立开发</span></span><span class="li-r"><i class="chev"></i></span></button>' +
         '<button class="li" id="act-contact"><span class="li-main"><span class="li-t">联系开发者</span><span class="li-s">GitHub 提 Issue · 小红书 1895737550</span></span><span class="li-r"><i class="chev"></i></span></button>' +
         '<button class="li" id="act-clear"><span class="li-main"><span class="li-t" style="color:var(--bad)">清空所有学习数据</span>' +
         '<span class="li-s">不可恢复</span></span><span class="li-r"><i class="chev"></i></span></button>' +
         '</div>';
 
       h += '<div style="text-align:center;color:var(--ink3);font-size:11.5px;margin:22px 0 6px;line-height:1.9">' +
-        '派立方408 · V2.0 正式版<br>题库来源：王道 2027 考研复习指导<br>原 Web 应用作者 zsc5725216-hub · 安卓版 tianshi</div>';
+        '派立方408 · V2.1<br>题库来源：王道 2027 考研复习指导<br>原 Web 应用作者 zsc5725216-hub · 安卓版 tianshi</div>';
       page.innerHTML = h;
 
       $('#set-theme').onclick = () => {
@@ -1129,8 +1128,7 @@
       };
       $('#open-fav').onclick=()=>go('fav',{});
       $('#open-study').onclick=()=>go('study',{});
-      $('#act-update').onclick=()=>openSheet('V2.0 正式版更新说明',[],null,b=>b.innerHTML='<div class="form-pad">学习计划触屏拖拽排序；收藏夹管理可新建收藏夹；学习时间卡片与月历热力图；资料库与学习免责声明；收藏/错题纯文本导出；本地记录支持覆盖升级。</div>');
-      $('#act-donate').onclick=()=>openSheet('感谢支持',[],null,b=>b.innerHTML='<img src="img/donate.png" alt="微信收款码" style="display:block;width:min(88%,360px);margin:8px auto;border-radius:16px"><p style="text-align:center;color:var(--ink2)">微信扫码支持作者</p>');
+      $('#act-update').onclick=()=>openSheet('V2.1 更新说明',[],null,b=>b.innerHTML='<div class="form-pad">首次使用声明更新，需阅读至底部并勾选同意后进入；移除打赏入口；版本更新为 V2.1。</div>');
       $('#act-contact').onclick=()=>openSheet('联系开发者',[],null,b=>b.innerHTML='<div class="form-pad">GitHub：在项目页面提交 Issue<br><br>小红书：1895737550<br><br>相关帖子评论区留言</div>');
       $('#act-eula').onclick = () => showEula(false);
       $('#act-export').onclick = exportData;
@@ -1242,27 +1240,43 @@
   function eulaHtml() {
     return '' +
       '<p>欢迎使用 <span class="hi">派立方408</span>。</p>' +
-      '<p>本应用是一个<b>完全离线</b>的计算机考研 408 刷题工具，所有题目、图片、学习记录都保存在你的手机本地，不联网、不上传、不需要注册账号，安装即用。</p>' +
-      '<p><span class="hi">关于来源</span><br>题库内容整理自王道 2027 考研复习指导，原 Web 应用由 <span class="hi">zsc5725216-hub</span> 开发维护：<br>' +
-      '<a href="#" id="repo-link">github.com/zsc5725216-hub/408-quiz</a></p>' +
-      '<p><span class="hi">关于安卓版</span><br>安卓版本由 <span class="hi">tianshi</span> 在原作者开源项目基础上移植制作，重新设计了适合手机的界面与交互。在此向原作者的无私分享表示诚挚感谢。</p>' +
-      '<p><span class="hi">使用约定</span><br>' +
-      '· 本应用完全免费，<b>任何人不得以任何形式售卖</b>，也不得用于任何付费课程、付费题库或商业引流；<br>' +
-      '· 请勿用于商业用途，请勿去除原作者与移植者的署名信息；<br>' +
-      '· 题库内容版权归原作者及出版方所有，仅供个人学习使用。</p>' +
-      '<p>继续使用即表示你已理解并同意以上约定。祝你 408 顺利上岸。</p>';
+      '<p>本应用是一款由个人开发者出于技术练手与学习交流目的开发的完全离线刷题工具。本应用完全免费，无任何商业盈利目的，请勿用于任何商业用途。</p>' +
+      '<p><span class="hi">【关于版权与内容来源】</span><br><br>' +
+      '1. 题库内容：本应用内整理的题库内容，其著作权及相关知识产权均归原出版方（如王道及原作者）所有。本应用仅作为技术展示，将网络公开的题目以离线形式进行排版整合，仅供个人考研复习交流使用。</p>' +
+      '<p>2. 资料库声明（重点）：应用内“资料库”模块展示的网盘链接，均由互联网公开渠道搜集整理。本应用仅提供文档类（如 PDF 笔记、真题文本等）资料的分享，绝对不包含、也坚决不提供任何付费视频课程。开发者不存储、不制作任何音视频文件，所有文档版权均归原权利人所有。</p>' +
+      '<p><span class="hi">【非盈利声明与支持正版】</span><br><br>' +
+      '1. 本应用开发初衷是为了解决个人备考时刷题的不便，绝不包含任何诱导消费、售卖课程或商业引流。<br><br>' +
+      '2. 强烈建议大家购买《王道408》正版实体书及官方正版课程。如果经济条件允许，请务必支持正版，技术工具不能替代大家对正版知识产权的支持。</p>' +
+      '<p><span class="hi">【免责与侵权处理（重要）】</span><br><br>' +
+      '1. 本应用为纯技术开源项目，代码部分遵循开源协议，欢迎交流学习。<br><br>' +
+      '2. 若原作者、出版方（王道团队）或任何版权方认为本应用内的任何内容侵犯了您的合法权益，请通过以下邮箱与我联系：<a href="mailto:2115729051@qq.com">2115729051@qq.com</a>。<br><br>' +
+      '3. 开发者承诺：在收到相关权利人的侵权通知后，将在第一时间无条件删除相关代码、题库及所有文档资源链接，并彻底关闭项目仓库。绝不逃避责任，绝不侵犯官方合法权益。</p>' +
+      '<p><span class="hi">【使用约束】</span><br><br>' +
+      '1. 禁止任何人将本应用（或修改后的版本）用于任何形式的售卖、付费题库、商业引流或倒卖。如发现此类倒卖行为，与原作者无关。<br><br>' +
+      '2. 所有学习记录（如错题本）均保存在您的手机本地。因您个人操作（如卸载、清理缓存）导致的数据丢失，开发者不予负责。</p>' +
+      '<p>继续使用即表示您已阅读、理解并同意以上约定。祝大家考研顺利，成功上岸！</p>';
   }
   function showEula(first) {
     const el = $('#eula');
     el.classList.remove('hidden');
     const body = $('#eula-body');
     if (!body.innerHTML.trim()) body.innerHTML = eulaHtml();
-    const link = $('#repo-link');
-    if (link) link.onclick = (e) => { e.preventDefault(); toast('github.com/zsc5725216-hub/408-quiz'); };
     const chk = $('#eula-ok'), btn = $('#eula-agree');
-    if (!first) { chk.checked = true; btn.disabled = false; btn.textContent = '关闭'; }
-    chk.onchange = () => { btn.disabled = !chk.checked; };
+    let reachedBottom = !first;
+    body.scrollTop = 0;
+    chk.checked = !first;
+    chk.disabled = first;
+    btn.disabled = first;
+    btn.textContent = first ? '进入软件' : '关闭';
+    body.onscroll = () => {
+      if (first && body.scrollTop + body.clientHeight >= body.scrollHeight - 4) {
+        reachedBottom = true;
+        chk.disabled = false;
+      }
+    };
+    chk.onchange = () => { btn.disabled = first ? !(reachedBottom && chk.checked) : !chk.checked; };
     btn.onclick = () => {
+      if (first && (!reachedBottom || !chk.checked)) return;
       if (first) {
         try { localStorage.setItem(EULA_KEY, '1'); } catch (e) {}
       }

@@ -101,6 +101,7 @@ button{font-family:inherit;font-size:inherit;color:inherit;border:none;backgroun
 .eula-check input{
   width:19px;height:19px;accent-color:var(--acc);flex:none;margin:0;
 }
+.eula-check .eula-hint{display:block;margin-top:3px;color:var(--ink3);font-size:11px}
 
 /* ---------- 头部 ---------- */
 .hdr{

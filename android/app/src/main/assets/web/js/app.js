@@ -2,7 +2,7 @@
 /*
  * 派立方408 — 移动端刷题（全本地数据，无网络请求）
  *
- * 架构约定（v2.1.1 维护版）：
+ * 架构约定（v2.1.2 维护版）：
  *   - paint()     页面级导航渲染：async，重建骨架 / 头部 / 底栏，带 viewSeq 竞态保护。
  *   - refresh()   同页数据变更：async，仅替换 #page 节点内容，保留头部 / 底栏 / 滚动位置。
  *   - 高频交互（主题、题型、筛选、收藏星标、清空）走局部 DOM 更新，不整页刷新。
@@ -12,7 +12,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = (window.PAI408_VERSION && window.PAI408_VERSION.name) || '2.1.1';
+  const APP_VERSION = (window.PAI408_VERSION && window.PAI408_VERSION.name) || '2.1.2';
 
   const SUBJECTS = [
     { id: 'ds', name: '数据结构', short: '数据结构', hue: 235 },
@@ -622,6 +622,20 @@
     if (seq === viewSeq) window.scrollTo(0, y);
   }
 
+  /**
+   * 仅重建页面内某个内容容器，保留其余 DOM（尤其是横向筛选栏 #wchips / #favchips）。
+   * 与 refresh() 的区别：不调用 freshPage()、不触碰 window.scrollTo，
+   * 因此 chips 的 scrollLeft 与用户手动拖动的纵向位置都原样保留。
+   * render(container, filterValue) 可为 async；完成后把结果写入 container.innerHTML。
+   */
+  async function refreshRegion(containerId, render) {
+    const box = $('#' + containerId);
+    if (!box) return;
+    const html = await render();
+    const live = $('#' + containerId);
+    if (live) live.innerHTML = html;
+  }
+
   async function runView(seq, st, page) {
     const view = VIEWS[st.v] || VIEWS.home;
     try {
@@ -943,6 +957,9 @@
     Q.activeSince = Date.now();
     const q = getQ(it);
     quizTitle();
+    // 换题时必须同步刷新星标：它挂在 header（位于 #page 之外），
+    // 不会随 qwrap 重绘，若不更新会保留上一题的收藏状态。
+    updateStar();
     if (!q) { wrap.innerHTML = '<div class="empty">题目数据缺失</div>'; return; }
 
     const sec = secOf(it.s, it.c);
@@ -1200,25 +1217,84 @@
   let favFilter = null;
   let suppressFavChipClick = false;
 
-  function favChipsHtml() {
-    let html = '<div class="sec-title">收藏夹 <button class="more" id="fav-new-folder">＋ 新建收藏夹</button></div>' +
-      '<div class="chips" id="favchips">' +
-      '<button class="chip ' + (favFilter === null ? 'on' : '') + '" data-fd="__all">全部<span class="n">' + favTotal() + '</span></button>';
+  function favChipsInnerHtml() {
+    let html = '<button class="chip ' + (favFilter === null ? 'on' : '') + '" data-fd="__all">全部<span class="n">' + favTotal() + '</span></button>';
     favFolders().forEach(f => {
       html += '<button class="chip ' + (favFilter === f.id ? 'on' : '') + '" data-fd="' + esc(f.id) + '">' +
         esc(f.name) + '<span class="n">' + favTotal(f.id) + '</span></button>';
     });
+    return html;
+  }
+  function favChipsHtml() {
+    return '<div class="sec-title">收藏夹 <button class="more" id="fav-new-folder">＋ 新建收藏夹</button></div>' +
+      '<div class="chips" id="favchips">' + favChipsInnerHtml() + '</div>';
+  }
+
+  /** 按当前筛选重算收藏题目列表（每次都实时读 store，避免闭包缓存） */
+  async function favBodyData() {
+    const items = store.fav.items;
+    const ids = Object.keys(items).filter(k => favFilter === null ? items[k].length : items[k].indexOf(favFilter) >= 0);
+    const raw = ids.map(parseQid);
+    if (!raw.length) return { list: [] };
+    await ensureData(raw.map(x => x.s));
+    return { list: raw.filter(it => getQCached(it)) };
+  }
+
+  function favBodyHtml(data) {
+    const list = data.list;
+    if (!list.length) {
+      return '<div class="empty"><div class="ico">★</div>' +
+        (favTotal() === 0 ? '还没有收藏题目<br>刷题时点右上角 ★ 即可收藏' : '这个收藏夹还是空的') + '</div>';
+    }
+    let html = '<div class="sec-title">共 ' + list.length + ' 题' +
+      (favFilter !== null && favFilter !== 'default' ? '<button class="more" id="fd-del">删除此夹</button>' : '') + '</div>' +
+      '<div class="quick" style="margin-bottom:14px">' +
+      '<button class="qbtn" id="fav-start"><span class="qbtn-ico sh">⇄</span>' +
+      '<span class="qbtn-tx"><b>乱序刷收藏</b><i>打乱顺序 · ' + list.length + ' 题</i></span></button>' +
+      '<button class="qbtn" id="fav-order"><span class="qbtn-ico rw" style="background:var(--acc-soft);color:var(--acc)">≡</span>' +
+      '<span class="qbtn-tx"><b>按顺序刷</b><i>保持收藏顺序 · ' + list.length + ' 题</i></span></button></div>' +
+      '<div class="list">';
+    list.forEach(it => {
+      const q = getQCached(it);
+      const st = posGet(it.s, it.c, it.k, it.n);
+      const t = it.k === 'b' ? q[1] : q[2];
+      html += '<button class="li" data-q="' + esc(qid(it)) + '">' +
+        '<span class="dot ' + (st ? (st.ok ? 'ok' : 'bad') : '') + '"></span>' +
+        '<span class="li-main"><span class="li-t">' + esc(String(t).slice(0, 60)) + '</span>' +
+        '<span class="li-s">' + esc(subjShort(it.s)) + ' · ' + esc(it.c) + ' · ' + kindName(it.k) + ' · 第' + it.n + '题</span></span>' +
+        '<span class="li-r"><i class="chev"></i></span></button>';
+    });
     return html + '</div>';
   }
+
+  /** 只重绘 #fbody；chips 节点、横向滚动位置与页面滚动位置全部保持不变 */
+  async function refreshFavBody() {
+    const data = await favBodyData();
+    const box = $('#fbody');
+    if (box) box.innerHTML = favBodyHtml(data);
+  }
+
+  /** 收藏夹数量变化（新建/删除）时才重建 chips 内部，但保留 scrollLeft */
+  function refreshFavChips() {
+    const chips = $('#favchips');
+    if (!chips) return;
+    const left = chips.scrollLeft;
+    chips.innerHTML = favChipsInnerHtml();
+    chips.scrollLeft = left;
+  }
+
   function confirmDeleteFolder(id) {
     if (!id || id === 'default') return;
     confirmSheet('删除收藏夹「' + folderName(id) + '」？夹内题目可重新收藏。', () => {
       favDelFolder(id);
       if (favFilter === id) favFilter = null;
-      refresh();
+      // 只更新 chips 与列表两块，不重建整页
+      refreshFavChips();
+      refreshFavBody();
       toast('收藏夹已删除');
     }, true);
   }
+
   function bindFavChips(box) {
     if (!box) return;
     delegate(box, 'click', '[data-fd]', (e, el) => {
@@ -1227,12 +1303,12 @@
       const next = v === '__all' ? null : v;
       if (next === favFilter) return;
       favFilter = next;
+      // 只切换 chip 高亮，不重建容器 → 横向拖动位置保留
       $$('[data-fd]', box).forEach(b => b.classList.toggle('on', b.dataset.fd === v));
-      // 列表与「删除此夹」按钮随筛选变化，走同页局部刷新
-      refresh();
+      refreshFavBody();
     });
 
-    // 新增：收藏夹长按可删除（默认夹与「全部」不可删）
+    // 收藏夹长按可删除（默认夹与「全部」不可删）
     let timer = null, startX = 0, startY = 0;
     const clear = () => { clearTimeout(timer); timer = null; };
     box.addEventListener('touchstart', e => {
@@ -1265,59 +1341,34 @@
   }
 
   VIEWS.fav = async function (page) {
-    const items = store.fav.items;
-    const chips = favChipsHtml();
-    const ids = Object.keys(items).filter(k => favFilter === null ? items[k].length : items[k].indexOf(favFilter) >= 0);
-    const raw = ids.map(parseQid);
+    const data = await favBodyData();
+    // chips 与列表分离：chips 常驻，列表放进 #fbody 单独更新
+    page.innerHTML = favChipsHtml() + '<div id="fbody">' + favBodyHtml(data) + '</div>';
 
-    if (!raw.length) {
-      page.innerHTML = chips + '<div class="empty"><div class="ico">★</div>' +
-        (favTotal() === 0 ? '还没有收藏题目<br>刷题时点右上角 ★ 即可收藏' : '这个收藏夹还是空的</div>');
-      bindFavChips($('#favchips', page));
-      delegate(page, 'click', '#fav-new-folder', () => {
-        askName('新建收藏夹', '', name => { favNewFolder(name); refresh(); toast('收藏夹已创建'); });
-      });
-      return;
-    }
-
-    await ensureData(raw.map(x => x.s));
-    const list = raw.filter(it => getQCached(it));
-    let html = chips;
-    html += '<div class="sec-title">共 ' + list.length + ' 题' +
-      (favFilter !== null && favFilter !== 'default' ? '<button class="more" id="fd-del">删除此夹</button>' : '') + '</div>' +
-      '<div class="quick" style="margin-bottom:14px">' +
-      '<button class="qbtn" id="fav-start"><span class="qbtn-ico sh">⇄</span>' +
-      '<span class="qbtn-tx"><b>乱序刷收藏</b><i>打乱顺序 · ' + list.length + ' 题</i></span></button>' +
-      '<button class="qbtn" id="fav-order"><span class="qbtn-ico rw" style="background:var(--acc-soft);color:var(--acc)">≡</span>' +
-      '<span class="qbtn-tx"><b>按顺序刷</b><i>保持收藏顺序 · ' + list.length + ' 题</i></span></button></div>' +
-      '<div class="list">';
-    list.forEach(it => {
-      const q = getQCached(it);
-      const st = posGet(it.s, it.c, it.k, it.n);
-      const t = it.k === 'b' ? q[1] : q[2];
-      html += '<button class="li" data-q="' + esc(qid(it)) + '">' +
-        '<span class="dot ' + (st ? (st.ok ? 'ok' : 'bad') : '') + '"></span>' +
-        '<span class="li-main"><span class="li-t">' + esc(String(t).slice(0, 60)) + '</span>' +
-        '<span class="li-s">' + esc(subjShort(it.s)) + ' · ' + esc(it.c) + ' · ' + kindName(it.k) + ' · 第' + it.n + '题</span></span>' +
-        '<span class="li-r"><i class="chev"></i></span></button>';
-    });
-    html += '</div>';
-    page.innerHTML = html;
-
-    const quizItems = () => list.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
+    // 委托到常驻 page 节点；筛选会重绘 #fbody，回调内实时重算数据
     bindFavChips($('#favchips', page));
     delegate(page, 'click', '#fav-new-folder', () => {
-      askName('新建收藏夹', '', name => { favNewFolder(name); refresh(); toast('收藏夹已创建'); });
+      askName('新建收藏夹', '', name => {
+        favNewFolder(name);
+        refreshFavChips();
+        refreshFavBody();
+        toast('收藏夹已创建');
+      });
     });
     delegate(page, 'click', '#fd-del', () => confirmDeleteFolder(favFilter));
-    delegate(page, 'click', '#fav-start', () => {
-      chooseMode('', '', '', list.length, mode => startQuiz(shuffle(quizItems()), mode, { fav: true, shuffle: true }), '乱序刷收藏');
+    delegate(page, 'click', '#fav-start', async () => {
+      const cur = await favBodyData();
+      const arr = cur.list.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
+      chooseMode('', '', '', arr.length, mode => startQuiz(shuffle(arr), mode, { fav: true, shuffle: true }), '乱序刷收藏');
     });
-    delegate(page, 'click', '#fav-order', () => {
-      chooseMode('', '', '', list.length, mode => startQuiz(quizItems(), mode, { fav: true }), '刷收藏');
+    delegate(page, 'click', '#fav-order', async () => {
+      const cur = await favBodyData();
+      const arr = cur.list.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
+      chooseMode('', '', '', arr.length, mode => startQuiz(arr, mode, { fav: true }), '刷收藏');
     });
-    delegate(page, 'click', '[data-q]', (e, el) => {
-      const arr = quizItems();
+    delegate(page, 'click', '[data-q]', async (e, el) => {
+      const cur = await favBodyData();
+      const arr = cur.list.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
       const idx = arr.findIndex(x => qid(x) === el.dataset.q);
       startQuiz(arr, MODE_VIEW, { fav: true });
       Q.i = Math.max(0, idx);
@@ -1391,6 +1442,7 @@
 
   /* ---------- 错题 ---------- */
   let wrongFilter = null;
+
   function wrongChipsHtml(all) {
     let html = '<div class="chips" id="wchips">' +
       '<button class="chip ' + (wrongFilter === null ? 'on' : '') + '" data-ws="__all">全部<span class="n">' + all.length + '</span></button>' +
@@ -1398,27 +1450,12 @@
         subjShort(s.id) + '<span class="n">' + all.filter(x => x.s === s.id).length + '</span></button>').join('') + '</div>';
     return html;
   }
-  function bindWrongChips(box) {
-    delegate(box, 'click', '[data-ws]', (e, el) => {
-      const next = el.dataset.ws === '__all' ? null : el.dataset.ws;
-      if (next === wrongFilter) return;
-      wrongFilter = next;
-      $$('[data-ws]', box).forEach(b => b.classList.toggle('on', b.dataset.ws === el.dataset.ws));
-      refresh();
-    });
-  }
 
-  VIEWS.wrong = async function (page) {
+  /** 按当前筛选重算列表数据（每次点击都实时读取，避免闭包缓存旧列表） */
+  async function wrongBodyData() {
     const all = store.wrong.slice().sort((a, b) => b.ts - a.ts);
-    const chips = wrongChipsHtml(all);
     const list = wrongFilter ? all.filter(x => x.s === wrongFilter) : all;
-
-    if (!list.length) {
-      page.innerHTML = chips + '<div class="empty"><div class="ico">✕</div>太棒了，这里空空如也<br>做题时答错的题目会自动收进来</div>';
-      bindWrongChips($('#wchips', page));
-      return;
-    }
-
+    if (!list.length) return { list: [], groups: {} };
     await ensureData(list.map(x => x.s));
     const L = list.filter(x => getQCached(x));
     const groups = {};
@@ -1426,14 +1463,20 @@
       const k = x.s + '|' + x.c + '|' + x.k;
       (groups[k] = groups[k] || []).push(x);
     });
+    return { list: L, groups: groups };
+  }
 
-    let html = chips +
-      '<div class="quick" style="margin-bottom:14px">' +
+  function wrongBodyHtml(data) {
+    const L = data.list;
+    if (!L.length) {
+      return '<div class="empty"><div class="ico">✕</div>太棒了，这里空空如也<br>做题时答错的题目会自动收进来</div>';
+    }
+    let html = '<div class="quick" style="margin-bottom:14px">' +
       '<button class="qbtn" id="w-shuffle"><span class="qbtn-ico sh">⇄</span>' +
       '<span class="qbtn-tx"><b>乱序重刷错题</b><i>全部打乱 · ' + L.length + ' 题</i></span></button></div>' +
       '<div class="sec-title">按板块重刷</div><div class="list" style="margin-bottom:14px">';
-    Object.keys(groups).sort().forEach(k => {
-      const arr = groups[k];
+    Object.keys(data.groups).sort().forEach(k => {
+      const arr = data.groups[k];
       const p = k.split('|');
       const sec = secOf(p[0], p[1]);
       html += '<button class="li" data-g="' + esc(k) + '">' +
@@ -1452,21 +1495,57 @@
         (x.cnt > 1 ? ' · 错 ' + x.cnt + ' 次' : '') + '</span></span>' +
         '<span class="li-r"><i class="chev"></i></span></button>';
     });
-    html += '</div>';
-    page.innerHTML = html;
+    return html + '</div>';
+  }
+
+  /** 只重绘 #wbody；chips 节点、横向位置与页面纵向滚动位置保持不变。
+   *  列表变短时浏览器会把 scrollY 夹到顶端，因此这里显式恢复。 */
+  async function refreshWrongBody() {
+    const y = window.scrollY;
+    const chips = $('#wchips');
+    const x = chips ? chips.scrollLeft : 0;
+    const data = await wrongBodyData();
+    const box = $('#wbody');
+    if (box) box.innerHTML = wrongBodyHtml(data);
+    if (chips) chips.scrollLeft = x;
+    window.scrollTo(0, y);
+  }
+
+  function bindWrongChips(box) {
+    delegate(box, 'click', '[data-ws]', (e, el) => {
+      const next = el.dataset.ws === '__all' ? null : el.dataset.ws;
+      if (next === wrongFilter) return;
+      wrongFilter = next;
+      // 只切换 chip 高亮，不重建 chips 容器 → 横向拖动位置保留
+      $$('[data-ws]', box).forEach(b => b.classList.toggle('on', b.dataset.ws === el.dataset.ws));
+      refreshWrongBody();
+    });
+  }
+
+  VIEWS.wrong = async function (page) {
+    const all = store.wrong.slice().sort((a, b) => b.ts - a.ts);
+    const data = await wrongBodyData();
+    // chips 与列表分离：chips 常驻，列表放进 #wbody 单独更新
+    page.innerHTML = wrongChipsHtml(all) + '<div id="wbody">' + wrongBodyHtml(data) + '</div>';
 
     bindWrongChips($('#wchips', page));
-    delegate(page, 'click', '#w-shuffle', () => {
+    // 列表内的交互统一委托到常驻的 page 节点；筛选会重绘 #wbody，
+    // 因此每个回调都实时重算数据，不能使用上面那个初始 data 的闭包。
+    delegate(page, 'click', '#w-shuffle', async () => {
+      const curData = await wrongBodyData();
       haptic();
-      const arr = shuffle(L.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n })));
+      const arr = shuffle(curData.list.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n })));
       chooseMode('', '', '', arr.length, mode => startQuiz(arr, mode, { wrong: true, shuffle: true }), '乱序重刷错题');
     });
-    delegate(page, 'click', '[data-g]', (e, el) => {
-      const arr = groups[el.dataset.g].map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
+    delegate(page, 'click', '[data-g]', async (e, el) => {
+      const curData = await wrongBodyData();
+      const arr = (curData.groups[el.dataset.g] || []).map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
+      if (!arr.length) return;
       chooseMode('', '', '', arr.length, mode => startQuiz(arr, mode, { wrong: true }), '重刷本题组');
     });
-    delegate(page, 'click', '[data-q]', (e, el) => {
-      const arr = L.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
+    delegate(page, 'click', '[data-q]', async (e, el) => {
+      const curData = await wrongBodyData();
+      const arr = curData.list.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
       const idx = arr.findIndex(x => qid(x) === el.dataset.q);
       startQuiz(arr, MODE_VIEW, { wrong: true });
       Q.i = Math.max(0, idx);
@@ -1508,6 +1587,9 @@
       '<span class="li-s">选择错题或收藏，复制纯文本</span></span><span class="li-r"><i class="chev"></i></span></button>' +
       '<button class="li" id="act-contact"><span class="li-main"><span class="li-t">联系开发者</span>' +
       '<span class="li-s">GitHub 提 Issue · 小红书 1895737550</span></span><span class="li-r"><i class="chev"></i></span></button>' +
+      '<button class="li" id="act-release"><span class="li-main">' +
+      '<span class="li-t">检查更新</span>' +
+      '<span class="li-s">前往 GitHub 仓库下载最新版</span></span></button>' +
       '<button class="li" id="act-clear"><span class="li-main"><span class="li-t" style="color:var(--bad)">清空所有学习数据</span>' +
       '<span class="li-s">不可恢复</span></span><span class="li-r"><i class="chev"></i></span></button></div>' +
       '<div style="text-align:center;color:var(--ink3);font-size:11.5px;margin:22px 0 6px;line-height:1.9">' +
@@ -1526,13 +1608,21 @@
     delegate(page, 'click', '#open-fav', () => go('fav', {}));
     delegate(page, 'click', '#open-study', () => go('study', {}));
     delegate(page, 'click', '#act-update', () => openSheet('V' + APP_VERSION + ' 更新说明', [], null, b => {
-      b.innerHTML = '<div class="form-pad">v2.1.1 为代码维护版本：渲染流程改为异步与局部刷新，' +
-        '修复首次协议在内容不足一屏时无法进入、答题中切换收藏夹丢失已选答案等问题，' +
-        '新增收藏夹长按删除。功能与题库不变。</div>';
+      b.innerHTML = '<div class="form-pad">V' + APP_VERSION + ' 为问题修复版本：' +
+        '答题换题时收藏星标现在跟随当前题目状态；错题本与收藏夹切换筛选改为只局部更新列表，' +
+        '筛选栏横向位置与页面滚动位置保持不变；「数据与关于」新增 GitHub 发行版直达入口。' +
+        '功能与题库不变。</div>';
     }));
     delegate(page, 'click', '#act-contact', () => openSheet('联系开发者', [], null, b => {
       b.innerHTML = '<div class="form-pad">GitHub：在项目页面提交 Issue<br><br>小红书：1895737550<br><br>相关帖子评论区留言</div>';
     }));
+    delegate(page, 'click', '#act-release', () => {
+      const url = 'https://github.com/zhangtianshi001/pi-408-quiz/releases';
+      try {
+        if (window.AndroidBridge && AndroidBridge.openUrl) AndroidBridge.openUrl(url);
+        else location.href = url;
+      } catch (e) { toast('无法打开链接'); }
+    });
     delegate(page, 'click', '#act-eula', () => showEula(false));
     delegate(page, 'click', '#act-export', () => exportData());
     delegate(page, 'click', '#act-clear', () => {

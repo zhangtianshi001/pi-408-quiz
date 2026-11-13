@@ -1,10 +1,11 @@
-# ---- 构建中间产物 ----
+# ---- 构建产物：dist 目录整体不上传 git ----
+# APK 与源码包由 README/发行版页面分发，不纳入版本库。
+dist/
 .build/
-dist/*.apk
-dist/*.idsig
 *.keystore
 *.jks
 *.apk
+*.idsig
 
 # ---- 版本单一来源：这两个文件必须能提交，不要忽略 ----
 !VERSION

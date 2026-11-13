@@ -306,7 +306,7 @@ public class MainActivity extends Activity {
      */
     static final class Bridge {
         /** 应用版本，与仓库根目录 VERSION 及构建生成的 version.js 保持一致。 */
-        static final String APP_VERSION = "2.1.1";
+        static final String APP_VERSION = "2.1.2";
 
         private final MainActivity act;
 

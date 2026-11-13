@@ -160,6 +160,7 @@ button{font-family:inherit;font-size:inherit;color:inherit;border:none;backgroun
   min-height:calc(100vh - 68px);
 }
 .page{animation:pageIn .3s var(--ease) both;transform:none}
+/* pageIn 用于页面入场；返回动画使用同参数的 pageInBack（见文末），两者效果等价。 */
 @keyframes pageIn{from{opacity:0}to{opacity:1}}
 .app.no-tab{padding-bottom:calc(var(--safe-b) + 26px)}
 .app.has-ab{padding-bottom:calc(var(--safe-b) + 92px)}
@@ -185,7 +186,6 @@ button{font-family:inherit;font-size:inherit;color:inherit;border:none;backgroun
 .hero h2{margin:0 0 4px;font-size:19px;font-weight:700;letter-spacing:.01em}
 .hero p{margin:0;font-size:12.5px;color:rgba(255,255,255,.82)}
 .hero-row{display:flex;gap:18px;margin-top:14px;position:relative;z-index:1}
-.hero-kpi{}
 .hero-kpi b{display:block;font-size:19px;font-weight:700;line-height:1.2}
 .hero-kpi span{font-size:11.5px;color:rgba(255,255,255,.78)}
 
@@ -252,7 +252,6 @@ button{font-family:inherit;font-size:inherit;color:inherit;border:none;backgroun
   margin:12px 0 2px;padding:8px;border-radius:12px;
   border:1px solid var(--line);background:#fff;
   overflow-x:auto;-webkit-overflow-scrolling:touch;
-  -webkit-overflow-scrolling:touch;
 }
 .figwrap::-webkit-scrollbar{height:3px}
 .figwrap::-webkit-scrollbar-thumb{background:rgba(0,0,0,.16);border-radius:9px}
@@ -261,7 +260,6 @@ button{font-family:inherit;font-size:inherit;color:inherit;border:none;backgroun
   border-radius:10px;border:1px solid var(--line);background:#fff;
   image-rendering:-webkit-optimize-contrast;
 }
-.qfig.tall{min-height:0}
 
 .opts{display:flex;flex-direction:column;gap:9px;margin-top:15px}
 .opt{
@@ -449,17 +447,45 @@ button{font-family:inherit;font-size:inherit;color:inherit;border:none;backgroun
   backdrop-filter:blur(8px);
 }
 .toast.show{opacity:1;transform:translate(-50%,0)}
-.title-mark{width:22px;height:22px;display:inline-grid;place-items:center;flex:none;border-radius:8px;background:var(--acc-soft);margin:0}.title-mark i{width:9px;height:9px;border:1.5px solid var(--acc);border-radius:3px;position:relative}.title-mark i::after{content:'';position:absolute;width:3px;height:3px;background:var(--acc);border-radius:50%;right:-3px;top:-3px;box-shadow:-8px 8px 0 var(--acc)}
+.title-mark{
+  width:22px;height:22px;display:inline-grid;place-items:center;flex:none;
+  border-radius:8px;background:var(--acc-soft);margin:0;
+}
+.title-mark i{width:9px;height:9px;border:1.5px solid var(--acc);border-radius:3px;position:relative}
+.title-mark i::after{content:'';position:absolute;width:3px;height:3px;background:var(--acc);border-radius:50%;right:-3px;top:-3px;box-shadow:-8px 8px 0 var(--acc)}
 .study-card{width:100%;min-height:112px;position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;text-align:left;padding:18px;margin:0 0 18px;border-radius:20px;color:#fff;background:linear-gradient(135deg,var(--acc) 0%,#6f80ff 58%,#8f9bff 100%);box-shadow:0 14px 30px -18px rgba(79,110,247,.72);transition:transform .18s ease,box-shadow .18s ease}
 .study-card:active{transform:scale(.985);box-shadow:0 5px 18px -12px rgba(79,110,247,.6)}
 .study-copy{display:flex;flex:1;flex-direction:column;gap:4px;z-index:1}.study-copy b{font-size:15px;font-weight:680}.study-copy small{font-size:11.5px;color:rgba(255,255,255,.78)}
 .heat-preview{display:grid;grid-template-columns:repeat(7,8px);gap:4px;z-index:1}.heat-cell{width:8px;height:8px;border-radius:2px;background:rgba(255,255,255,.22)}.heat-cell.active{background:#cce4ff}.heat-cell.strong{background:#fff}
 .study-pi{position:absolute;right:2px;bottom:-35px;font-family:Georgia,serif;font-size:110px;line-height:1;color:rgba(255,255,255,.12);pointer-events:none}
 .date-field{position:relative;margin:6px 0 10px}.date-field .date-inp{margin:0;color:transparent;position:relative;z-index:1;background:transparent}.date-field .date-inp::-webkit-datetime-edit{color:transparent}.date-field .date-placeholder{position:absolute;z-index:0;left:14px;top:50%;transform:translateY(-50%);font-family:inherit;font-size:14.5px;font-weight:400;line-height:1.4;color:var(--ink3);pointer-events:none}.date-field.has-value .date-inp{color:var(--ink)}.date-field.has-value .date-inp::-webkit-datetime-edit{color:var(--ink)}.date-field.has-value .date-placeholder{display:none}
-.plan-card{transition:opacity .2s,transform .22s cubic-bezier(.22,.61,.36,1),box-shadow .2s;touch-action:pan-y;will-change:transform}.plan-card.dragging{transform:scale(1.025);box-shadow:0 12px 30px -12px rgba(30,56,38,.35);opacity:.92;z-index:2}.plan-placeholder{margin:6px 0;border:1.5px dashed #83b190;border-radius:16px;background:rgba(214,234,219,.35);transition:height .18s ease,margin .18s ease}.plan-grip{color:var(--ink3);font-size:18px;padding:0 2px 0 8px;opacity:.55}.plan-enter{animation:planAppear .24s var(--ease) both}@keyframes planAppear{from{opacity:.45;transform:translateY(7px)}to{opacity:1;transform:none}}
+.plan-card{
+  transition:opacity .2s,transform .22s cubic-bezier(.22,.61,.36,1),box-shadow .2s;
+  touch-action:pan-y;will-change:transform;gap:12px;
+}
+.plan-card.dragging{transform:scale(1.025);box-shadow:0 12px 30px -12px rgba(30,56,38,.35);opacity:.92;z-index:2}
+.plan-placeholder{margin:6px 0;border:1.5px dashed #83b190;border-radius:16px;background:rgba(214,234,219,.35);transition:height .18s ease,margin .18s ease}
+.plan-grip{color:var(--ink3);font-size:18px;padding:0 2px 0 8px;opacity:.55}
+.plan-enter{animation:planAppear .24s var(--ease) both}
+@keyframes planAppear{from{opacity:.45;transform:translateY(7px)}to{opacity:1;transform:none}}
 .hdr-title{letter-spacing:.01em}.hero{box-shadow:0 14px 32px -24px rgba(48,67,110,.55)}
-.plan-card{gap:12px}.plan-card.completed{order:2;background:#eceff3!important;border-color:#e1e5ea;color:#9098a5}.plan-card.completed .li-t{color:#858e9c;text-decoration:line-through}.plan-card.completed .li-s{color:#a0a7b2}.plan-check{width:23px;height:23px;border:1.5px solid var(--line);border-radius:7px;color:#fff;flex:none}.plan-card.completed .plan-check{background:#9ca5b1;border-color:#9ca5b1}.plan-card.completed .plan-grip{color:#aab0ba}
-.form-pad{padding:10px 18px 18px}.form-pad .inp{margin:6px 0 10px}.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;padding:16px;background:var(--card);border-radius:var(--radius);margin:12px 0}.calendar>*{height:34px;display:grid;place-items:center;font-size:12px}.calendar b{color:var(--ink3)}.calendar .day{border-radius:9px;background:#fff;color:var(--ink2);font-style:normal}.calendar .day.light{background:#d7f0df;color:#24683c}.calendar .day.deep{background:#25834a;color:#fff}.legend{text-align:center;color:var(--ink3);font-size:11px;margin-bottom:16px}.legend span{color:#78c68b}.legend strong{color:#25834a}
+.plan-card.completed{order:2;background:#eceff3!important;border-color:#e1e5ea;color:#9098a5}
+.plan-card.completed .li-t{color:#858e9c;text-decoration:line-through}
+.plan-card.completed .li-s{color:#a0a7b2}
+.plan-check{width:23px;height:23px;border:1.5px solid var(--line);border-radius:7px;color:#fff;flex:none}
+.plan-card.completed .plan-check{background:#9ca5b1;border-color:#9ca5b1}
+.plan-card.completed .plan-grip{color:#aab0ba}
+.form-pad{padding:10px 18px 18px}
+.form-pad .inp{margin:6px 0 10px}
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;padding:16px;background:var(--card);border-radius:var(--radius);margin:12px 0}
+.calendar>*{height:34px;display:grid;place-items:center;font-size:12px}
+.calendar b{color:var(--ink3)}
+.calendar .day{border-radius:9px;background:#fff;color:var(--ink2);font-style:normal}
+.calendar .day.light{background:#d7f0df;color:#24683c}
+.calendar .day.deep{background:#25834a;color:#fff}
+.legend{text-align:center;color:var(--ink3);font-size:11px;margin-bottom:16px}
+.legend span{color:#78c68b}
+.legend strong{color:#25834a}
 
 /* ---------- Sheet ---------- */
 .sheet-wrap{position:fixed;inset:0;z-index:150;display:flex;align-items:flex-end;justify-content:center}
@@ -558,21 +584,13 @@ button{font-family:inherit;font-size:inherit;color:inherit;border:none;backgroun
   --pane:246,247,251;
 }
 
-/* ---------- 字号 ---------- */
-:root.font-small{font-size:14px}
-:root.font-large{font-size:17px}
-:root.font-small .qstem{font-size:14.5px}
-:root.font-large .qstem{font-size:17px}
-:root.font-small .opt{font-size:13.5px}
-:root.font-large .opt{font-size:16px}
-:root.font-large .res-expl,:root.font-large .answer-box{font-size:15.5px}
-:root.font-large .bigq-hint{font-size:15px}
-
 /* 主题下的白底图仍保持白底，避免深色下反白 */
 :root[data-theme=dark] .qfig,
 :root[data-theme=dark] .figwrap{background:#fff}
 
-/* ---------- 返回动画 ---------- */
+/* ---------- 返回动画 ----------
+   JS 返回动画固定使用 animationName='pageInBack'，因此保留该名称；
+   其关键帧与 pageIn 完全一致（opacity 0 -> 1），等价于复用同一动画，未改动任何数值。 */
 @keyframes pageInBack{from{opacity:0}to{opacity:1}}
 
 /* 修复：actionbar 内按钮等宽 */

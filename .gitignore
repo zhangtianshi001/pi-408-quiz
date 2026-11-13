@@ -6,8 +6,13 @@ dist/*.idsig
 *.jks
 *.apk
 
+# ---- 版本单一来源：这两个文件必须能提交，不要忽略 ----
+!VERSION
+!android/app/src/main/assets/web/version.js
+
 # ---- Python ----
 __pycache__/
+*.pyc
 *.py[cod]
 .venv/
 venv/

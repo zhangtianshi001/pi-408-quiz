@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import glob
+import json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD = os.path.join(ROOT, '.build')
@@ -30,10 +31,79 @@ JAVAC_HOME = os.environ.get('JAVAC_HOME') or JAVA_HOME
 
 MIN_SDK = 21
 TARGET_SDK = 34
-VERSION_CODE = int(os.environ.get('VERSION_CODE', '10'))
-VERSION_NAME = os.environ.get('VERSION_NAME', '2.1')
+
+# ---- 版本单一来源：仓库根目录 VERSION 提供默认值，环境变量仍可覆盖 ----
+VERSION_FILE = os.path.join(ROOT, 'VERSION')
+
+
+def load_version():
+    """读取 VERSION（形如 {"name":"2.1.1","code":11}），失败时给出清晰报错。"""
+    try:
+        with open(VERSION_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except OSError as e:
+        raise SystemExit('VERSION 文件读取失败：%s（%s）' % (VERSION_FILE, e))
+    except ValueError as e:
+        raise SystemExit('VERSION 不是合法 JSON：%s（%s）；期望 {"name":"2.1.1","code":11}'
+                         % (VERSION_FILE, e))
+    name = data.get('name') if isinstance(data, dict) else None
+    code = data.get('code') if isinstance(data, dict) else None
+    if not isinstance(name, str) or not name or isinstance(code, bool) or not isinstance(code, int):
+        raise SystemExit('VERSION 字段错误：%s 需要字符串 name 和整数 code，实际为 %r'
+                         % (VERSION_FILE, data))
+    return name, code
+
+
+DEFAULT_VERSION_NAME, DEFAULT_VERSION_CODE = load_version()
+
+
+def env_int(name, default):
+    """环境变量整数覆盖，非法值直接给出清晰报错。"""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise SystemExit('%s 必须是整数，当前值：%r' % (name, raw))
+
+
+VERSION_CODE = env_int('VERSION_CODE', DEFAULT_VERSION_CODE)
+VERSION_NAME = os.environ.get('VERSION_NAME', DEFAULT_VERSION_NAME)
 PKG = 'com.tianshi.pai408'
 APK_NAME = '\u6d3e\u7acb\u65b9408-v%s.apk' % VERSION_NAME
+
+# ---- 跨平台可执行文件名：Windows 保留原有 .exe/.bat，其他平台用无后缀 ----
+IS_WIN = os.name == 'nt'
+
+
+def tool(directory, name, win_ext=''):
+    """按 os.name 拼接可执行文件名。"""
+    return os.path.join(directory, name + (win_ext if IS_WIN else ''))
+
+
+def require_tool(label, path):
+    """预检工具路径；JAVA_HOME 为空时交给 PATH 解析并给出清晰错误。"""
+    if os.path.dirname(path):
+        if not os.path.exists(path):
+            raise SystemExit('%s 不存在：%s（请检查 ANDROID_SDK_ROOT / JAVA_HOME / JAVAC_HOME）'
+                             % (label, path))
+    else:
+        print('[i] %s 通过 PATH 解析：%s' % (label, path))
+        if shutil.which(path) is None:
+            raise SystemExit('%s 不在 PATH 上：%s（请设置 JAVA_HOME/JAVAC_HOME，或把 JDK/bin 加入 PATH）'
+                             % (label, path))
+    return path
+
+
+AAPT2 = tool(BT, 'aapt2', '.exe')
+D8 = tool(BT, 'd8', '.bat')
+ZIPALIGN = tool(BT, 'zipalign', '.exe')
+APKSIGNER = tool(BT, 'apksigner', '.bat')
+JAVAC = (tool(os.path.join(JAVAC_HOME, 'bin'), 'javac', '.exe')
+         if JAVAC_HOME else 'javac' + ('.exe' if IS_WIN else ''))
+KEYTOOL = (tool(os.path.join(JAVA_HOME, 'bin'), 'keytool', '.exe')
+           if JAVA_HOME else 'keytool' + ('.exe' if IS_WIN else ''))
 
 ENV = dict(os.environ)
 if JAVA_HOME:
@@ -53,6 +123,41 @@ def run(cmd, cwd=None, check=True):
     if check and p.returncode != 0:
         raise SystemExit('FAILED %s' % p.returncode)
     return p.returncode, out
+
+
+def write_version_js(assets_dir):
+    """生成前端版本文件；必须在复制 assets 到 stage 之前调用，否则不会进 APK。"""
+    if any(c in VERSION_NAME for c in ("'", '\\', '\n', '\r')):
+        raise SystemExit('VERSION_NAME 含非法字符（引号/反斜杠/换行）：%r' % VERSION_NAME)
+    web_dir = os.path.join(assets_dir, 'web')
+    os.makedirs(web_dir, exist_ok=True)
+    version_js = os.path.join(web_dir, 'version.js')
+    with open(version_js, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('/* 由 tools/build_apk.py 从 VERSION 生成，请勿手工修改 */\n')
+        f.write("window.PAI408_VERSION = { name: '%s', code: %d };\n"
+                % (VERSION_NAME, VERSION_CODE))
+    print('[i] 已生成 %s（name=%s, code=%s）' % (version_js, VERSION_NAME, VERSION_CODE))
+    sync_java_version()
+    return version_js
+
+
+JAVA_FILE = os.path.join(APP, 'java', 'com', 'tianshi', 'pai408', 'MainActivity.java')
+JAVA_VERSION_RE = re.compile(r'(static final String APP_VERSION\s*=\s*)"[^"]*"(\s*;)')
+
+
+def sync_java_version():
+    """把 Bridge.APP_VERSION 同步为 VERSION_NAME，避免三处版本各自维护。"""
+    if not os.path.exists(JAVA_FILE):
+        raise SystemExit('MainActivity.java 不存在：%s' % JAVA_FILE)
+    with open(JAVA_FILE, 'r', encoding='utf-8') as f:
+        src = f.read()
+    if not JAVA_VERSION_RE.search(src):
+        raise SystemExit('MainActivity.java 未找到 APP_VERSION 常量定义，无法同步版本')
+    out = JAVA_VERSION_RE.sub(lambda m: m.group(1) + '"' + VERSION_NAME + '"' + m.group(2), src, count=1)
+    if out != src:
+        with open(JAVA_FILE, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(out)
+        print('[i] 已同步 MainActivity.java APP_VERSION = "%s"' % VERSION_NAME)
 
 
 def main():
@@ -78,7 +183,7 @@ def main():
     for r, _, fs in os.walk(res):
         for f in fs:
             res_files.append(os.path.join(r, f))
-    cmd = [os.path.join(BT, 'aapt2.exe'), 'compile', '-o', compiled] + res_files
+    cmd = [AAPT2, 'compile', '-o', compiled] + res_files
     run(cmd)
 
     # 2) aapt2 link -> 基础 APK + R.java
@@ -86,7 +191,7 @@ def main():
     if os.path.exists(base_apk):
         os.remove(base_apk)
     run([
-        os.path.join(BT, 'aapt2.exe'), 'link',
+        AAPT2, 'link',
         '-o', base_apk,
         '-I', PLATFORM,
         '--manifest', manifest,
@@ -102,7 +207,7 @@ def main():
     # 3) javac
     java_files = java_src + glob.glob(os.path.join(gen, '**', '*.java'), recursive=True)
     run([
-        os.path.join(JAVAC_HOME, 'bin', 'javac.exe'),
+        JAVAC,
         '-encoding', 'UTF-8',
         '-source', '8', '-target', '8',
         '-bootclasspath', PLATFORM,
@@ -113,13 +218,17 @@ def main():
     # 4) d8 -> classes.dex
     class_files = glob.glob(os.path.join(classes, '**', '*.class'), recursive=True)
     run([
-        os.path.join(BT, 'd8.bat'),
+        D8,
         '--min-api', str(MIN_SDK),
         '--lib', PLATFORM,
         '--output', dexdir,
     ] + class_files)
 
-    # 5) 组装 APK：base.apk + assets + classes.dex
+    # 5) 生成前端版本文件 version.js
+    #    必须早于下面「复制 assets 到 stage」，否则不会打进 APK。
+    write_version_js(assets)
+
+    # 6) 组装 APK：base.apk + assets + classes.dex
     stage = os.path.join(inter, 'stage')
     shutil.rmtree(stage, ignore_errors=True)
     os.makedirs(stage)
@@ -131,13 +240,13 @@ def main():
     # dex
     shutil.copy(os.path.join(dexdir, 'classes.dex'), os.path.join(stage, 'classes.dex'))
 
-    # assets
+    # assets（上面刚生成的 version.js 会被一并复制进 stage）
     ast_out = os.path.join(stage, 'assets')
     if os.path.exists(ast_out):
         shutil.rmtree(ast_out)
     shutil.copytree(assets, ast_out)
 
-    # 6) 打包
+    # 7) 打包
     #    安卓要求：classes.dex 与 resources.arsc 必须 STORED（不压缩），
     #    并且数据起始偏移 4 字节对齐（下面 zipalign 会再补 -p 页对齐）。
     unsigned = os.path.join(inter, 'unsigned.apk')
@@ -160,13 +269,13 @@ def main():
             else:
                 z.write(full, rel, zipfile.ZIP_DEFLATED)
 
-    # 7) zipalign
+    # 8) zipalign
     aligned = os.path.join(inter, 'aligned.apk')
     if os.path.exists(aligned):
         os.remove(aligned)
-    run([os.path.join(BT, 'zipalign.exe'), '-f', '-p', '4', unsigned, aligned])
+    run([ZIPALIGN, '-f', '-p', '4', unsigned, aligned])
 
-    # 8) 签名
+    # 9) 签名
     #    正式发布请自行生成密钥并设置环境变量：
     #      PA408_KEYSTORE / PA408_KS_ALIAS / PA408_KS_PASS / PA408_KEY_PASS
     #    未设置时自动创建一把本地调试密钥（不适合上架，仅用于本机安装测试）。
@@ -176,8 +285,9 @@ def main():
     key_pass = os.environ.get('PA408_KEY_PASS', ks_pass)
     if not os.path.exists(ks):
         os.makedirs(os.path.dirname(os.path.abspath(ks)) or '.', exist_ok=True)
+        require_tool('keytool', KEYTOOL)
         run([
-            os.path.join(JAVA_HOME, 'bin', 'keytool.exe'), '-genkeypair',
+            KEYTOOL, '-genkeypair',
             '-keystore', ks, '-alias', alias, '-keyalg', 'RSA',
             '-keysize', '2048', '-validity', '10000',
             '-storepass', ks_pass, '-keypass', key_pass,
@@ -188,16 +298,15 @@ def main():
     signed = os.path.join(OUT, APK_NAME)
     if os.path.exists(signed):
         os.remove(signed)
-    apksigner = os.path.join(BT, 'apksigner.bat' if os.name == 'nt' else 'apksigner')
     run([
-        apksigner, 'sign',
+        APKSIGNER, 'sign',
         '--ks', ks, '--ks-key-alias', alias,
         '--ks-pass', 'pass:' + ks_pass, '--key-pass', 'pass:' + key_pass,
         '--v1-signing-enabled', 'true', '--v2-signing-enabled', 'true',
         '--out', signed, aligned
     ])
 
-    run([apksigner, 'verify', '--verbose', signed], check=False)
+    run([APKSIGNER, 'verify', '--verbose', signed], check=False)
     print('APK:', signed, round(os.path.getsize(signed) / 1048576, 2), 'MB')
 
 

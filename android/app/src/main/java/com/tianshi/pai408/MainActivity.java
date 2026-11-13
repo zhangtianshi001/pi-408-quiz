@@ -37,8 +37,13 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 
+/**
+ * 应用主界面：单个 WebView 承载 assets/web 下的前端页面。
+ * 通过 addJavascriptInterface 暴露 AndroidBridge，方法签名由 JS 侧依赖，保持稳定。
+ */
 public class MainActivity extends Activity {
 
+    /** 虚拟域名，仅用于 WebView 拦截 assets 请求，不产生真实网络访问。 */
     static final String HOST = "appassets.androidplatform.net";
     static final String BASE = "https://" + HOST + "/assets/web/";
     static final String BG_LIGHT = "#f6f7fb";
@@ -82,7 +87,9 @@ public class MainActivity extends Activity {
     /** 统一设置状态栏 / 导航栏颜色与图标明暗，避免浅色主题下白字看不清 */
     void applyBarColors(boolean dark) {
         Window w = getWindow();
-        if (w == null) return;
+        if (w == null) {
+            return;
+        }
         int bg = Color.parseColor(dark ? BG_DARK : BG_LIGHT);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             w.setStatusBarColor(bg);
@@ -90,14 +97,19 @@ public class MainActivity extends Activity {
         }
         int flags = 0;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (!dark) flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (!dark) {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!dark) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            if (!dark) {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }
         }
         w.getDecorView().setSystemUiVisibility(flags);
     }
 
+    /** 主题切换必须回到主线程执行，Bridge 由 JS 线程调用 */
     static final class ThemeTask implements Runnable {
         private final MainActivity act;
         private final boolean dark;
@@ -127,24 +139,39 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 把虚拟域名下的 URL 映射到 assets 文件，带 no-cache 与跨域头。 */
     static final class Assets {
         static WebResourceResponse serve(WebView v, String url) {
-            if (url == null) return null;
+            if (url == null) {
+                return null;
+            }
             String prefix = "https://" + HOST + "/assets/";
-            if (!url.startsWith(prefix)) return null;
+            if (!url.startsWith(prefix)) {
+                return null;
+            }
             String path = url.substring(prefix.length());
             int cut = path.indexOf('?');
-            if (cut >= 0) path = path.substring(0, cut);
+            if (cut >= 0) {
+                path = path.substring(0, cut);
+            }
             cut = path.indexOf('#');
-            if (cut >= 0) path = path.substring(0, cut);
+            if (cut >= 0) {
+                path = path.substring(0, cut);
+            }
             try {
                 path = URLDecoder.decode(path, "UTF-8");
             } catch (Exception ignored) {
+                // 解码失败时保留原始 path，继续按字面匹配
             }
-            if (path.contains("..")) return null;
+            // 禁止 ../ 形式的目录穿越
+            if (path.contains("..")) {
+                return null;
+            }
 
             byte[] data = readAsset(v, path);
-            if (data == null) data = readAsset(v, "web/" + path);
+            if (data == null) {
+                data = readAsset(v, "web/" + path);
+            }
             HashMap<String, String> headers = new HashMap<String, String>();
             headers.put("Cache-Control", "no-cache");
             headers.put("Access-Control-Allow-Origin", "*");
@@ -165,7 +192,9 @@ public class MainActivity extends Activity {
                 ByteArrayOutputStream bo = new ByteArrayOutputStream(8192);
                 byte[] buf = new byte[16384];
                 int n;
-                while ((n = is.read(buf)) > 0) bo.write(buf, 0, n);
+                while ((n = is.read(buf)) > 0) {
+                    bo.write(buf, 0, n);
+                }
                 return bo.toByteArray();
             } catch (IOException e) {
                 return null;
@@ -174,31 +203,52 @@ public class MainActivity extends Activity {
                     try {
                         is.close();
                     } catch (IOException ignored) {
+                        // 关闭失败不影响已读取的数据
                     }
                 }
             }
         }
     }
 
+    /** 依据扩展名返回 MIME，未识别时回退到二进制流。 */
     static String guessMime(String path) {
         String p = path.toLowerCase();
-        if (p.endsWith(".js")) return "application/javascript";
-        if (p.endsWith(".css")) return "text/css";
-        if (p.endsWith(".html") || p.endsWith(".htm")) return "text/html";
-        if (p.endsWith(".json")) return "application/json";
-        if (p.endsWith(".webp")) return "image/webp";
-        if (p.endsWith(".png")) return "image/png";
-        if (p.endsWith(".jpg") || p.endsWith(".jpeg")) return "image/jpeg";
-        if (p.endsWith(".svg")) return "image/svg+xml";
+        if (p.endsWith(".js")) {
+            return "application/javascript";
+        }
+        if (p.endsWith(".css")) {
+            return "text/css";
+        }
+        if (p.endsWith(".html") || p.endsWith(".htm")) {
+            return "text/html";
+        }
+        if (p.endsWith(".json")) {
+            return "application/json";
+        }
+        if (p.endsWith(".webp")) {
+            return "image/webp";
+        }
+        if (p.endsWith(".png")) {
+            return "image/png";
+        }
+        if (p.endsWith(".jpg") || p.endsWith(".jpeg")) {
+            return "image/jpeg";
+        }
+        if (p.endsWith(".svg")) {
+            return "image/svg+xml";
+        }
         String ext = MimeTypeMap.getFileExtensionFromUrl(p);
         if (ext != null && ext.length() > 0) {
             String m = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
-            if (m != null) return m;
+            if (m != null) {
+                return m;
+            }
         }
         return "application/octet-stream";
     }
 
     /* ---------- 返回键 ---------- */
+    /** JS 未消费返回键时，两秒内连按两次退出应用。 */
     static final class BackCallback implements ValueCallback<String> {
         private final MainActivity act;
 
@@ -209,7 +259,9 @@ public class MainActivity extends Activity {
         @Override
         public void onReceiveValue(String value) {
             boolean handled = "true".equals(value);
-            if (handled) return;
+            if (handled) {
+                return;
+            }
             long now = System.currentTimeMillis();
             if (now - act.lastBack < 2000) {
                 act.finish();
@@ -234,24 +286,35 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        if (web != null) web.onPause();
+        if (web != null) {
+            web.onPause();
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (web != null) web.onResume();
+        if (web != null) {
+            web.onResume();
+        }
     }
 
     /* ---------- JS 桥 ---------- */
+    /**
+     * JS 侧通过 AndroidBridge 调用：saveText(name, content)、copyText(text)、
+     * openUrl(url)、setTheme(mode)、version()。方法名与参数列表不可变更。
+     */
     static final class Bridge {
+        /** 应用版本，与仓库根目录 VERSION 及构建生成的 version.js 保持一致。 */
+        static final String APP_VERSION = "2.1.1";
+
         private final MainActivity act;
 
         Bridge(MainActivity a) {
             act = a;
         }
 
-        /** 导出 JSON 到系统「下载」目录 */
+        /** 导出文本到系统「下载」目录，返回保存位置或失败提示。 */
         @JavascriptInterface
         public String saveText(String name, String content) {
             try {
@@ -259,7 +322,8 @@ public class MainActivity extends Activity {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     ContentValues cv = new ContentValues();
                     cv.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
-                    cv.put(MediaStore.MediaColumns.MIME_TYPE, name != null && name.endsWith(".txt") ? "text/plain" : "application/json");
+                    cv.put(MediaStore.MediaColumns.MIME_TYPE,
+                            name != null && name.endsWith(".txt") ? "text/plain" : "application/json");
                     cv.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
                     Uri uri = act.getContentResolver()
                             .insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
@@ -273,8 +337,11 @@ public class MainActivity extends Activity {
                     }
                 }
                 File dir = act.getExternalFilesDir(null);
-                if (dir == null) dir = act.getFilesDir();
-                File f = new File(dir, name);
+                if (dir == null) {
+                    dir = act.getFilesDir();
+                }
+                // 只取文件名部分，避免 name 携带路径分隔符造成目录穿越
+                File f = new File(dir, new File(name).getName());
                 FileOutputStream fo = new FileOutputStream(f);
                 fo.write(bytes);
                 fo.close();
@@ -286,21 +353,26 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String version() {
-            return "1.2";
+            return APP_VERSION;
         }
 
         @JavascriptInterface
         public void copyText(String text) {
             ClipboardManager cm = (ClipboardManager) act.getSystemService(Context.CLIPBOARD_SERVICE);
-            if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("派立方408", text));
+            if (cm != null) {
+                cm.setPrimaryClip(ClipData.newPlainText("派立方408", text));
+            }
         }
 
         @JavascriptInterface
         public void openUrl(String url) {
             try {
-                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url));
+                android.content.Intent i = new android.content.Intent(
+                        android.content.Intent.ACTION_VIEW, Uri.parse(url));
                 act.startActivity(i);
-            } catch (Exception ignored) { }
+            } catch (Exception ignored) {
+                // 无应用可处理该 URL 时静默忽略
+            }
         }
 
         /** 跟随网页主题切换系统栏配色 */

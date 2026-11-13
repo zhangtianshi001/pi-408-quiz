@@ -3,6 +3,9 @@ package com.tianshi.pai408;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ContentValues;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.res.AssetManager;
 import android.graphics.Color;
 import android.net.Uri;
@@ -250,13 +253,13 @@ public class MainActivity extends Activity {
 
         /** 导出 JSON 到系统「下载」目录 */
         @JavascriptInterface
-        public void saveText(String name, String content) {
+        public String saveText(String name, String content) {
             try {
                 byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     ContentValues cv = new ContentValues();
                     cv.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
-                    cv.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                    cv.put(MediaStore.MediaColumns.MIME_TYPE, name != null && name.endsWith(".txt") ? "text/plain" : "application/json");
                     cv.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
                     Uri uri = act.getContentResolver()
                             .insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
@@ -265,7 +268,7 @@ public class MainActivity extends Activity {
                         if (os != null) {
                             os.write(bytes);
                             os.close();
-                            return;
+                            return "下载目录";
                         }
                     }
                 }
@@ -275,13 +278,29 @@ public class MainActivity extends Activity {
                 FileOutputStream fo = new FileOutputStream(f);
                 fo.write(bytes);
                 fo.close();
+                return f.getAbsolutePath();
             } catch (Exception ignored) {
+                return "保存失败";
             }
         }
 
         @JavascriptInterface
         public String version() {
-            return "1.0";
+            return "1.2";
+        }
+
+        @JavascriptInterface
+        public void copyText(String text) {
+            ClipboardManager cm = (ClipboardManager) act.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("派立方408", text));
+        }
+
+        @JavascriptInterface
+        public void openUrl(String url) {
+            try {
+                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url));
+                act.startActivity(i);
+            } catch (Exception ignored) { }
         }
 
         /** 跟随网页主题切换系统栏配色 */

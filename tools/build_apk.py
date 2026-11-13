@@ -30,8 +30,8 @@ JAVAC_HOME = os.environ.get('JAVAC_HOME') or JAVA_HOME
 
 MIN_SDK = 21
 TARGET_SDK = 34
-VERSION_CODE = int(os.environ.get('VERSION_CODE', '1'))
-VERSION_NAME = os.environ.get('VERSION_NAME', '1.0')
+VERSION_CODE = int(os.environ.get('VERSION_CODE', '9'))
+VERSION_NAME = os.environ.get('VERSION_NAME', '2.0')
 PKG = 'com.tianshi.pai408'
 APK_NAME = '\u6d3e\u7acb\u65b9408-v%s.apk' % VERSION_NAME
 

@@ -9,7 +9,7 @@
   ];
   const LS = {
     pos: 'p408.pos.v1', wrong: 'p408.wrong.v1', fav: 'p408.fav.v1',
-    set: 'p408.set.v1', eula: 'p408.eula.v1'
+    set: 'p408.set.v1', eula: 'p408.eula.v1', plans: 'p408.plans.v1', study: 'p408.study.v1', library: 'p408.library.eula.v1'
   };
   const MODE_VIEW = 'view', MODE_DO = 'do';
 
@@ -240,7 +240,7 @@
     render(true);
   }
   function back() {
-    if (nav.stack.length > 1) { nav.stack.pop(); render(false); return true; }
+    if (nav.stack.length > 1) { if(cur().v==='quiz') recordStudyTime(); nav.stack.pop(); render(false); return true; }
     return false;
   }
   function goTab(tab) {
@@ -248,7 +248,7 @@
     render(true);
   }
 
-  const TITLES = { home: '派立方408', fav: '收藏', wrong: '错题', me: '我的' };
+  const TITLES = { home: '派立方408', library: '资料库', fav: '收藏', wrong: '错题', me: '我的' };
 
   /* ---------------- 渲染 ---------------- */
   function render(forward) {
@@ -260,9 +260,18 @@
     page.style.animationName = forward === false ? 'pageInBack' : 'pageIn';
     const view = VIEWS[st.v] || VIEWS.home;
     const hdr = $('#hdr');
-    const isTabRoot = ['home', 'fav', 'wrong', 'me'].indexOf(st.v) >= 0 && nav.stack.length === 1;
+    const isTabRoot = ['home', 'library', 'wrong', 'me'].indexOf(st.v) >= 0 && nav.stack.length === 1;
     hdr.classList.toggle('sub', !isTabRoot);
-    $('#hdr-title').textContent = st.title || TITLES[st.v] || '派立方408';
+    hdr.dataset.view=isTabRoot?st.v:'sub';
+    const heading=esc(st.title || TITLES[st.v] || '派立方408');
+    const labels={home:'PAI CUBE · 408',library:'STUDY LIBRARY',wrong:'REVIEW NOTES',me:'YOUR STUDY SPACE'};
+    const art={
+      home:'<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><path d="M12 13h16M15 13l7 15m7-15-7 15"/><circle cx="20" cy="20" r="2" class="fill"/></svg>',
+      library:'<svg viewBox="0 0 40 40"><path d="M7 11c5-2 9-1 13 2v19c-4-3-8-4-13-2zM33 11c-5-2-9-1-13 2v19c4-3 8-4 13-2z"/><path d="M11 16c2 0 4 .3 6 1m12-1c-2 0-4 .3-6 1M11 21c2 0 4 .3 6 1m12-1c-2 0-4 .3-6 1"/></svg>',
+      wrong:'<svg viewBox="0 0 40 40"><rect x="9" y="8" width="22" height="25" rx="5"/><path d="M15 15h10m-10 6h4m8 0-5 6m0-6 5 6"/></svg>',
+      me:'<svg viewBox="0 0 40 40"><circle cx="20" cy="14" r="6"/><path d="M8 32c1-7 5-10 12-10s11 3 12 10"/><path d="m29 8 1.5 3 3.5.5-2.5 2.5.6 3.5-3.1-1.7-3.1 1.7.6-3.5-2.5-2.5 3.5-.5z"/></svg>'
+    };
+    $('#hdr-title').innerHTML=isTabRoot?'<span class="hdr-art" aria-hidden="true">'+art[st.v]+'</span><span class="hdr-copy"><small>'+labels[st.v]+'</small><strong>'+heading+'</strong></span><span class="hdr-rule"></span>':'<span class="hdr-submark" aria-hidden="true"></span><span class="hdr-copy"><strong>'+heading+'</strong></span>';
     $('#hdr-right').innerHTML = '';
     $('#tabbar').classList.toggle('hide', !isTabRoot);
     app.classList.toggle('no-tab', !isTabRoot);
@@ -298,7 +307,6 @@
       let tot = 0, done = 0, ok = 0;
       SUBJECTS.forEach(s => { const st = subjStat(s.id); tot += st.tot; done += st.done; ok += st.ok; });
       const rate = done ? Math.round(ok / done * 100) : 0;
-      const wrongN = wrongCountBy();
       let html = '<div class="hero">' +
         '<h2>派立方408</h2>' +
         '<p>数据结构 · 组成原理 · 操作系统 · 计算机网络</p>' +
@@ -325,14 +333,12 @@
         '<span class="qbtn-tx"><b>全库乱序刷题</b><i>四科混合随机 · ' + tot + ' 题</i></span></button>' +
         '</div>';
 
-      html += '<div class="sec-title">快捷入口</div><div class="list">' +
-        '<button class="li" data-act="wrong"><span class="li-num">✕</span><span class="li-main"><span class="li-t">错题本</span>' +
-        '<span class="li-s">' + (wrongN ? wrongN + ' 道待巩固' : '暂无错题') + '</span></span><span class="li-r">' + (wrongN ? wrongN : '') + '<i class="chev"></i></span></button>' +
-        '<button class="li" data-act="fav"><span class="li-num">★</span><span class="li-main"><span class="li-t">我的收藏</span>' +
-        '<span class="li-s">' + (favTotal() ? favTotal() + ' 道已收藏' : '还没有收藏题目') + '</span></span><span class="li-r"><i class="chev"></i></span></button>' +
-        '<button class="li" data-act="me"><span class="li-num">≡</span><span class="li-main"><span class="li-t">学习统计与设置</span>' +
-        '<span class="li-s">查看各科正确率、字号与主题</span></span><span class="li-r"><i class="chev"></i></span></button>' +
-        '</div>';
+      const plans = read(LS.plans, []);
+      const active = plans.filter(x => !x.done), complete = plans.filter(x => x.done);
+      html += '<div class="sec-title">学习计划 <button class="more" id="plan-add">＋ 添加计划</button></div><div class="list" id="plan-list">';
+      active.concat(complete).forEach(p => { html += '<div class="li plan-card' + (p.done ? ' completed' : '') + '" draggable="true" data-plan="' + p.id + '"><button class="plan-check" data-check="' + p.id + '">' + (p.done ? '✓' : '') + '</button><span class="li-main"><span class="li-t">' + esc(p.title) + '</span><span class="li-s">' + esc(p.date || '未设日期') + (p.detail ? ' · ' + esc(p.detail) : '') + '</span></span></div>'; });
+      if (!plans.length) html += '<div class="empty compact">添加日期与目标，让复习计划更清晰</div>';
+      html += '</div>';
       page.innerHTML = html;
 
       $$('[data-subj]', page).forEach(b => b.onclick = () => { haptic(); go('subject', { subj: b.dataset.subj, kind: 'x' }); });
@@ -346,14 +352,35 @@
           startQuiz(items, mode, { shuffle: true, all: true });
         }, '全库乱序刷题');
       };
-      $$('[data-act]', page).forEach(b => b.onclick = () => {
-        const a = b.dataset.act;
-        if (a === 'wrong') go('wrong', {});
-        else if (a === 'fav') go('fav', {});
-        else go('me', {});
-      });
+      $('#plan-add').onclick = addPlan;
+      bindPlanInteractions($('#plan-list'));
     });
   };
+
+  function storePlans(v) { write(LS.plans, v); }
+  function planActions(p){openSheet('已完成计划', [{t:'恢复计划',v:'restore'},{t:'删除计划',v:'delete'}], v => { const list=read(LS.plans,[]);if(v==='delete')storePlans(list.filter(x=>x.id!==p.id));else{const x=list.find(y=>y.id===p.id);if(x)x.done=false;storePlans(list);}refreshPlanList(true); });}
+  function planCard(p){return '<div class="li plan-card'+(p.done?' completed':'')+'" draggable="true" data-plan="'+esc(p.id)+'"><button class="plan-check" data-check="'+esc(p.id)+'" aria-label="完成计划">'+(p.done?'✓':'')+'</button><span class="li-main"><span class="li-t">'+esc(p.title)+'</span><span class="li-s">'+esc(p.date||'未设日期')+(p.detail?' · '+esc(p.detail):'')+'</span></span><span class="plan-grip" aria-hidden="true">⠿</span></div>';}
+  function refreshPlanList(animate){const box=$('#plan-list');if(!box)return;const plans=read(LS.plans,[]),ordered=plans.filter(x=>!x.done).concat(plans.filter(x=>x.done));box.innerHTML=ordered.length?ordered.map(planCard).join(''):'<div class="empty compact">添加日期与目标，让复习计划更清晰</div>';if(animate)$$('.plan-card',box).forEach((el,i)=>{el.style.animationDelay=Math.min(i*24,180)+'ms';el.classList.add('plan-enter')});}
+  function bindPlanInteractions(box){if(!box)return;let hold=null,drag=null,placeholder=null,offset=0,startY=0;
+    box.addEventListener('dragstart',e=>{const card=e.target.closest('[data-plan]');if(!card)return;drag=card;e.dataTransfer.setData('text/plain',card.dataset.plan);e.dataTransfer.effectAllowed='move';});
+    box.addEventListener('dragover',e=>{e.preventDefault();const target=e.target.closest('[data-plan]');if(!drag||!target||target===drag)return;const plans=read(LS.plans,[]),a=plans.find(x=>x.id===drag.dataset.plan),b=plans.find(x=>x.id===target.dataset.plan);if(!a||!b||a.done!==b.done)return;const r=target.getBoundingClientRect();animatePlanLayout(box,()=>box.insertBefore(drag,e.clientY<r.top+r.height/2?target:target.nextSibling));});
+    box.addEventListener('drop',e=>{e.preventDefault();if(!drag)return;const ids=Array.from(box.querySelectorAll('[data-plan]')).map(x=>x.dataset.plan),list=read(LS.plans,[]),map={};list.forEach(x=>map[x.id]=x);storePlans(ids.map(id=>map[id]).filter(Boolean));drag=null;});
+    box.addEventListener('dragend',()=>{if(drag){const ids=Array.from(box.querySelectorAll('[data-plan]')).map(x=>x.dataset.plan),list=read(LS.plans,[]),map={};list.forEach(x=>map[x.id]=x);storePlans(ids.map(id=>map[id]).filter(Boolean));}drag=null;});
+    box.addEventListener('click',e=>{const check=e.target.closest('[data-check]');const card=e.target.closest('[data-plan]');if(!card)return;const plans=read(LS.plans,[]),p=plans.find(x=>x.id===card.dataset.plan);if(!p)return;if(check){if(p.done){planActions(p);return;}p.done=true;storePlans(plans);refreshPlanList(true);return;}if(p.done)planActions(p);});
+    box.addEventListener('touchstart',e=>{const card=e.target.closest('[data-plan]');if(!card||e.target.closest('button'))return;const t=e.touches[0];startY=t.clientY;hold=setTimeout(()=>{drag=card;const r=card.getBoundingClientRect();offset=startY-r.top;placeholder=document.createElement('div');placeholder.className='plan-placeholder';placeholder.style.height=r.height+'px';card.parentNode.insertBefore(placeholder,card.nextSibling);card.classList.add('dragging');card.style.position='fixed';card.style.left=r.left+'px';card.style.top=r.top+'px';card.style.width=r.width+'px';card.style.zIndex='90';card.style.pointerEvents='none';haptic();},360);},{passive:true});
+    box.addEventListener('touchmove',e=>{if(!drag)return;e.preventDefault();const t=e.touches[0];drag.style.top=(t.clientY-offset)+'px';const under=document.elementFromPoint(t.clientX,t.clientY),target=under&&under.closest('[data-plan]');if(target&&target!==drag&&target.parentNode===box){const d=read(LS.plans,[]),a=d.find(x=>x.id===drag.dataset.plan),b=d.find(x=>x.id===target.dataset.plan);if(a&&b&&a.done===b.done){const r=target.getBoundingClientRect(),before=t.clientY<r.top+r.height/2?target:target.nextSibling;if(before!==placeholder&&before!==drag)animatePlanLayout(box,()=>box.insertBefore(placeholder,before));}}},{passive:false});
+    box.addEventListener('touchend',()=>{clearTimeout(hold);if(!drag)return;animatePlanLayout(box,()=>{box.insertBefore(drag,placeholder);placeholder.remove();});drag.removeAttribute('style');drag.classList.remove('dragging');const list=Array.from(box.querySelectorAll('[data-plan]')).map(el=>el.dataset.plan),old=read(LS.plans,[]),map={};old.forEach(p=>map[p.id]=p);storePlans(list.map(id=>map[id]).filter(Boolean));drag=null;placeholder=null;});
+    box.addEventListener('touchcancel',()=>{clearTimeout(hold);if(drag){placeholder.remove();drag.removeAttribute('style');drag.classList.remove('dragging');drag=null;refreshPlanList(false);}});
+  }
+  function animatePlanLayout(box,mutate){const nodes=Array.from(box.querySelectorAll('.plan-card:not(.dragging)')),first=new Map(nodes.map(x=>[x,x.getBoundingClientRect().top]));mutate();nodes.forEach(el=>{const delta=first.get(el)-el.getBoundingClientRect().top;if(!delta)return;el.style.transition='none';el.style.transform='translateY('+delta+'px)';requestAnimationFrame(()=>{el.style.transition='transform 220ms cubic-bezier(.22,.61,.36,1)';el.style.transform='';});});}
+  function addPlan() {
+    openSheet('添加学习计划', [], null, body => {
+      body.innerHTML='<div class="form-pad"><input class="inp" id="pl-title" placeholder="计划题目 / 目标" maxlength="60"><div class="date-field"><span class="date-placeholder">选择计划日期</span><input class="inp date-inp" id="pl-date" type="date" aria-label="选择计划日期"></div><textarea class="inp" id="pl-detail" placeholder="细则（选填）" maxlength="140"></textarea><button class="btn-primary" id="pl-save">保存计划</button></div>';
+      const dateField=$('.date-field',body),dateInput=$('#pl-date',body);
+      dateInput.addEventListener('change',()=>dateField.classList.toggle('has-value',!!dateInput.value));
+      $('#pl-save').onclick=()=>{const title=$('#pl-title').value.trim();if(!title)return toast('请填写计划题目');const list=read(LS.plans,[]);list.push({id:Date.now().toString(36),title,date:$('#pl-date').value,detail:$('#pl-detail').value.trim(),done:false});storePlans(list);closeSheet();refreshPlanList(true);};
+    });
+  }
 
   /* ---------------- 视图：科目 ---------------- */
   VIEWS.subject = function (page, p) {
@@ -510,7 +537,7 @@
 
   function startQuiz(items, mode, ctx) {
     if (!items.length) return toast('没有可选题目');
-    Q = { items: items, i: 0, mode: mode, ctx: ctx || {}, done: {}, marked: {} };
+    Q = { items: items, i: 0, mode: mode, ctx: ctx || {}, done: {}, marked: {}, startedAt: Date.now() };
     go('quiz', {});
   }
 
@@ -541,11 +568,13 @@
 
   function renderQ() {
     if (!Q) return;
+    accrueActiveStudy();
     // 结果页的固定操作条挂在 #app 下，重绘下一题时需先清除，
     // 否则它会覆盖新题的「看答案 / 提交」按钮。
     const oldActionbar = $('.actionbar', $('#app'));
     if (oldActionbar) oldActionbar.remove();
     const it = Q.items[Q.i];
+    Q.activeSubject=it.s; Q.activeSince=Date.now();
     const q = getQ(it);
     const wrap = $('#qwrap');
     if (!wrap) return;
@@ -761,6 +790,7 @@
   }
 
   function finishQuiz() {
+    recordStudyTime();
     const items = Q.items;
     let ok = 0, bad = 0, skipped = 0;
     items.forEach(it => {
@@ -802,16 +832,14 @@
     });
   }
 
+  function recordStudyTime() {
+    accrueActiveStudy(); if(Q) Q.startedAt=null;
+  }
+  function accrueActiveStudy(){if(!Q||!Q.activeSince||!Q.activeSubject)return;const secs=Math.floor((Date.now()-Q.activeSince)/1000);Q.activeSince=Date.now();if(secs<=0)return;const d=new Date(),key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),data=read(LS.study,{});data[key]=data[key]||{};data[key][Q.activeSubject]=(data[key][Q.activeSubject]||0)+secs;write(LS.study,data);}
+
   /* ---------------- 收藏交互 ---------------- */
   function starTap(it) {
     haptic();
-    const folders = favFoldersOf(it);
-    if (!folders.length) {
-      favAddDefault(it);
-      toast('已收藏到默认收藏夹');
-      quizTop();
-      return;
-    }
     openFavSheet(it);
   }
 
@@ -851,7 +879,7 @@
     const fav = store.fav;
     const folders = fav.folders;
     const items = fav.items;
-    let html = '<div class="chips" id="favchips">' +
+    let html = '<div class="sec-title">收藏夹 <button class="more" id="fav-new-folder">＋ 新建收藏夹</button></div><div class="chips" id="favchips">' +
       '<button class="chip ' + (favFilter === null ? 'on' : '') + '" data-fd="__all">全部<span class="n">' + favTotal() + '</span></button>';
     folders.forEach(f => {
       const n = favTotal(f.id);
@@ -867,6 +895,7 @@
       page.innerHTML = html + '<div class="empty"><div class="ico">★</div>' +
         (favTotal() === 0 ? '还没有收藏题目<br>刷题时点右上角 ★ 即可收藏' : '这个收藏夹还是空的') + '</div>';
       bindChips(page);
+      $('#fav-new-folder').onclick=()=>askName('新建收藏夹','',name=>{favNewFolder(name);render(true);toast('收藏夹已创建')});
       return Promise.resolve();
     }
 
@@ -899,6 +928,7 @@
       h += '</div>';
       page.innerHTML = h;
       bindChips(page);
+      $('#fav-new-folder').onclick=()=>askName('新建收藏夹','',name=>{favNewFolder(name);render(true);toast('收藏夹已创建')});
       const favItems = () => list.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
       $('#fav-start').onclick = () => {
         chooseMode('', '', '', list.length, function (mode) {
@@ -925,6 +955,35 @@
       };
     });
   };
+
+  const LIBRARY = [
+    ['2009–2026 计算机408统考真题','https://pan.quark.cn/s/f127962f318c'],
+    ['2027 王道 8 套卷＋解析','https://pan.quark.cn/s/61d432b7806f'],
+    ['26 王道计算机408真题分类做题本','https://pan.quark.cn/s/8b2d2ba1007c'],
+    ['26 王道计算机408《高分笔记》','https://pan.quark.cn/s/689b51ba61bf'],
+    ['操作系统基础考点讲解','https://pan.quark.cn/s/f51a25e314c6'],
+    ['计算机网络基础考点讲解','https://pan.quark.cn/s/3490eeeefbe4'],
+    ['数据结构基础考点讲解','https://pan.quark.cn/s/232068c0d92a'],
+    ['组成原理基础考点讲解','https://pan.quark.cn/s/b1c6047ef3f0'],
+    ['27 王道课后习题做题本','https://pan.quark.cn/s/8bc1c262534b']
+  ];
+  VIEWS.library = function(page) {
+    page.innerHTML='<div class="hero"><h2>资料库</h2><p>整理的 408 学习资料，点击后使用夸克网盘打开</p></div><div class="list">'+LIBRARY.map((x,i)=>'<button class="li" data-lib="'+i+'"><span class="li-num">↗</span><span class="li-main"><span class="li-t">'+esc(x[0])+'</span><span class="li-s">夸克网盘 · 学习资料</span></span><span class="li-r"><i class="chev"></i></span></button>').join('')+'</div><p class="li-s" style="padding:12px">资料仅供学习交流，请尊重版权，不要二次贩卖。</p>';
+    $$('[data-lib]',page).forEach(b=>b.onclick=()=>{const goLink=()=>{try{if(window.AndroidBridge&&AndroidBridge.openUrl)AndroidBridge.openUrl(LIBRARY[+b.dataset.lib][1]);else location.href=LIBRARY[+b.dataset.lib][1]}catch(e){toast('无法打开链接')}};let ok=false;try{ok=localStorage.getItem(LS.library)==='1'}catch(e){}if(ok)return goLink();confirmSheet('资料仅限个人学习交流，请遵守版权要求，禁止二次贩卖。是否继续？',()=>{try{localStorage.setItem(LS.library,'1')}catch(e){}goLink()});});
+  };
+
+  VIEWS.study = function(page) {
+    const data=read(LS.study,{}), now=new Date(), year=now.getFullYear(), month=now.getMonth();
+    const first=new Date(year,month,1).getDay(), days=new Date(year,month+1,0).getDate();
+    let h='<div class="hero"><h2>学习时间</h2><p>'+year+'年 '+(month+1)+'月 · 每天持续一点点</p></div><div class="calendar">'+['日','一','二','三','四','五','六'].map(x=>'<b>'+x+'</b>').join('');
+    for(let i=0;i<first;i++)h+='<i></i>';
+    for(let d=1;d<=days;d++){const key=year+'-'+String(month+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');const sec=Object.values(data[key]||{}).reduce((a,x)=>a+x,0);h+='<i class="day '+(sec>=3600?'deep':sec>0?'light':'')+'">'+d+'</i>';}
+    h+='</div><div class="legend">□ 未学习　<span>■</span> 已学习　<strong>■</strong> 超过 1 小时</div><div class="list">';
+    SUBJECTS.forEach(s=>{const total=Object.values(data).reduce((a,day)=>a+(day[s.id]||0),0);h+='<div class="li"><span class="li-num">◷</span><span class="li-main"><span class="li-t">'+esc(s.name)+'</span><span class="li-s">累计 '+formatDuration(total)+'</span></span></div>';});
+    h+='</div>';page.innerHTML=h;
+  };
+  function studyPreview(data){let h='<span class="heat-preview" aria-hidden="true">';for(let i=27;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');const sec=Object.values(data[key]||{}).reduce((a,x)=>a+x,0);h+='<i class="heat-cell '+(sec>=3600?'strong':sec>0?'active':'')+'"></i>'; }return h+'</span><span class="study-pi">π</span>';}
+  function formatDuration(sec){const m=Math.floor(sec/60);return m<60?m+' 分钟':Math.floor(m/60)+' 小时 '+m%60+' 分钟';}
   function folderName(id) { const f = favFolders().find(x => x.id === id); return f ? f.name : ''; }
   function getQCached(it) { const m = IDX[it.s]; if (!m || !m[it.c]) return null; return (it.k === 'b' ? m[it.c].b : m[it.c].x)[it.n] || null; }
   function bindChips(page) {
@@ -1029,45 +1088,38 @@
       SUBJECTS.forEach(s => { const x = subjStat(s.id); tot += x.tot; done += x.done; ok += x.ok; });
       const rate = done ? Math.round(ok / done * 100) : 0;
 
-      let h = '<div class="stat-grid" style="margin-bottom:16px">' +
+      const studyData=read(LS.study,{}),studyTotal=Object.values(studyData).reduce((sum,day)=>sum+Object.values(day).reduce((a,x)=>a+x,0),0);
+      let h = '<button class="study-card" id="open-study"><span class="study-copy"><b>学习打卡热力图</b><small>记录每科投入 · 累计 '+formatDuration(studyTotal)+'</small></span>'+studyPreview(studyData)+'<span class="study-pi">π</span></button>'+
+        '<div class="stat-grid" style="margin-bottom:16px">' +
         '<div class="stat-cell"><b>' + done + '</b><span>已练习</span></div>' +
         '<div class="stat-cell ok"><b>' + rate + '%</b><span>正确率</span></div>' +
         '<div class="stat-cell bad"><b>' + wrongCountBy() + '</b><span>错题</span></div>' +
         '</div>';
 
-      h += '<div class="sec-title">各科进度</div><div class="list">';
-      SUBJECTS.forEach(s => {
-        const x = subjStat(s.id);
-        const pct = x.tot ? Math.round(x.done / x.tot * 100) : 0;
-        h += '<div class="li"><span class="li-main"><span class="li-t">' + esc(s.name) + '</span>' +
-          '<span class="li-s">' + x.done + '/' + x.tot + ' · 正确率 ' + x.rate + '%</span>' +
-          '<span class="prog"><i style="width:' + pct + '%"></i></span></span></div>';
-      });
-      h += '</div>';
+
+      h += '<div class="sec-title">我的收藏</div><div class="list">' +
+        '<button class="li" id="open-fav"><span class="li-num">★</span><span class="li-main"><span class="li-t">收藏夹</span><span class="li-s">'+favFolders().length+' 个收藏夹 · '+favTotal()+' 道题</span></span><span class="li-r"><i class="chev"></i></span></button></div>';
 
       h += '<div class="sec-title">偏好设置</div><div class="list">';
       h += '<div class="li"><span class="li-main"><span class="li-t">主题</span></span>' +
         '<span class="li-r"><button class="btn-sm" id="set-theme">' +
         (st.theme === 'dark' ? '深色' : st.theme === 'light' ? '浅色' : '跟随系统') + '</button></span></div>';
-      h += '<div class="li"><span class="li-main"><span class="li-t">正文字号</span></span>' +
-        '<span class="li-r"><button class="btn-sm" id="set-font">' +
-        (st.font === 'large' ? '大' : st.font === 'small' ? '小' : '标准') + '</button></span></div>';
-      h += '<div class="li"><span class="li-main"><span class="li-t">默认练习方式</span></span>' +
-        '<span class="li-r"><button class="btn-sm" id="set-mode">' +
-        (st.lastMode === MODE_VIEW ? '看题模式' : '做题模式') + '</button></span></div>';
       h += '</div>';
 
       h += '<div class="sec-title">数据与关于</div><div class="list">' +
+        '<button class="li" id="act-update"><span class="li-main"><span class="li-t">更新说明</span><span class="li-s">V2.0 正式版</span></span><span class="li-r"><i class="chev"></i></span></button>' +
         '<button class="li" id="act-eula"><span class="li-main"><span class="li-t">使用协议与致谢</span>' +
         '<span class="li-s">开源项目说明</span></span><span class="li-r"><i class="chev"></i></span></button>' +
         '<button class="li" id="act-export"><span class="li-main"><span class="li-t">导出学习数据</span>' +
-        '<span class="li-s">收藏、错题、进度 JSON</span></span><span class="li-r"><i class="chev"></i></span></button>' +
+        '<span class="li-s">选择错题或收藏，复制纯文本</span></span><span class="li-r"><i class="chev"></i></span></button>' +
+        '<button class="li" id="act-donate"><span class="li-num">☕</span><span class="li-main"><span class="li-t">请作者喝咖啡</span><span class="li-s">感谢支持独立开发</span></span><span class="li-r"><i class="chev"></i></span></button>' +
+        '<button class="li" id="act-contact"><span class="li-main"><span class="li-t">联系开发者</span><span class="li-s">GitHub 提 Issue · 小红书 1895737550</span></span><span class="li-r"><i class="chev"></i></span></button>' +
         '<button class="li" id="act-clear"><span class="li-main"><span class="li-t" style="color:var(--bad)">清空所有学习数据</span>' +
         '<span class="li-s">不可恢复</span></span><span class="li-r"><i class="chev"></i></span></button>' +
         '</div>';
 
       h += '<div style="text-align:center;color:var(--ink3);font-size:11.5px;margin:22px 0 6px;line-height:1.9">' +
-        '派立方408 · v1.0<br>题库来源：王道 2027 考研复习指导<br>原 Web 应用作者 zsc5725216-hub · 安卓版 tianshi</div>';
+        '派立方408 · V2.0 正式版<br>题库来源：王道 2027 考研复习指导<br>原 Web 应用作者 zsc5725216-hub · 安卓版 tianshi</div>';
       page.innerHTML = h;
 
       $('#set-theme').onclick = () => {
@@ -1075,19 +1127,15 @@
         const nx = order[(order.indexOf(store.set.theme) + 1) % 3];
         setSetting('theme', nx); applyTheme(); render(true);
       };
-      $('#set-font').onclick = () => {
-        const order = ['small', 'normal', 'large'];
-        const nx = order[(order.indexOf(store.set.font) + 1) % 3];
-        setSetting('font', nx); applyFont(); render(true);
-      };
-      $('#set-mode').onclick = () => {
-        setSetting('lastMode', store.set.lastMode === MODE_VIEW ? MODE_DO : MODE_VIEW);
-        render(true);
-      };
+      $('#open-fav').onclick=()=>go('fav',{});
+      $('#open-study').onclick=()=>go('study',{});
+      $('#act-update').onclick=()=>openSheet('V2.0 正式版更新说明',[],null,b=>b.innerHTML='<div class="form-pad">学习计划触屏拖拽排序；收藏夹管理可新建收藏夹；学习时间卡片与月历热力图；资料库与学习免责声明；收藏/错题纯文本导出；本地记录支持覆盖升级。</div>');
+      $('#act-donate').onclick=()=>openSheet('感谢支持',[],null,b=>b.innerHTML='<img src="img/donate.png" alt="微信收款码" style="display:block;width:min(88%,360px);margin:8px auto;border-radius:16px"><p style="text-align:center;color:var(--ink2)">微信扫码支持作者</p>');
+      $('#act-contact').onclick=()=>openSheet('联系开发者',[],null,b=>b.innerHTML='<div class="form-pad">GitHub：在项目页面提交 Issue<br><br>小红书：1895737550<br><br>相关帖子评论区留言</div>');
       $('#act-eula').onclick = () => showEula(false);
       $('#act-export').onclick = exportData;
       $('#act-clear').onclick = () => confirmSheet('确定清空所有学习数据？进度、错题、收藏都会被删除，此操作不可恢复。', function () {
-        [LS.pos, LS.wrong, LS.fav].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+        [LS.pos, LS.wrong, LS.fav, LS.plans, LS.study].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
         favFilter = null; wrongFilter = null;
         toast('已清空');
         render(true);
@@ -1096,25 +1144,7 @@
   };
 
   function exportData() {
-    const data = {
-      app: '派立方408', version: 1, at: new Date().toISOString(),
-      progress: store.pos, wrong: store.wrong, fav: store.fav
-    };
-    const txt = JSON.stringify(data, null, 2);
-    try {
-      if (window.AndroidBridge && window.AndroidBridge.saveText) {
-        window.AndroidBridge.saveText('派立方408-数据.json', txt);
-        toast('已导出到下载目录');
-        return;
-      }
-    } catch (e) {}
-    try {
-      const blob = new Blob([txt], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = '派立方408-数据.json';
-      document.body.appendChild(a); a.click(); a.remove();
-      toast('已导出');
-    } catch (e) { toast('导出失败'); }
+    openSheet('选择导出内容',[],null,body=>{body.innerHTML='<div class="form-pad"><label><input type="checkbox" id="ex-wrong" checked> 错题（'+wrongCountBy()+'）</label><br><label><input type="checkbox" id="ex-fav" checked> 收藏（'+favTotal()+'）</label><button class="btn-primary" id="ex-copy" style="width:100%;margin-top:18px">导出并复制纯文本</button></div>';$('#ex-copy').onclick=async()=>{const wantWrong=$('#ex-wrong').checked,wantFav=$('#ex-fav').checked;if(!wantWrong&&!wantFav)return toast('请至少选择一项');await Promise.all(SUBJECTS.map(s=>load(s.id)));let entries=[];if(wantWrong)entries=entries.concat(store.wrong);if(wantFav)entries=entries.concat(Object.keys(store.fav.items).map(parseQid));const seen={};let out=[];entries.forEach(it=>{const id=qid(it);if(seen[id])return;seen[id]=1;const q=getQ(it);if(!q)return;let text=it.k==='b'?'题目：'+q[1]+'\n参考答案：'+q[2]:'题目：'+q[2]+'\n'+(q[4]||[]).join('\n')+'\n答案：'+q[1]+'\n解析：'+q[3];out.push('【'+subjShort(it.s)+' '+it.c+' 第'+it.n+'题】\n'+text)});const txt=out.join('\n\n');try{if(window.AndroidBridge&&AndroidBridge.copyText){AndroidBridge.copyText(txt);const dest=AndroidBridge.saveText('派立方408-导出.txt',txt);closeSheet();toast(dest==='保存失败'?'已复制；文件保存失败':('已复制并保存到'+dest));}else{await navigator.clipboard.writeText(txt);closeSheet();toast('已复制 '+out.length+' 道题，可直接粘贴');}}catch(e){toast('导出或复制失败，请重试')}};});
   }
 
   /* ---------------- 主题 / 字号 ---------------- */
@@ -1273,7 +1303,7 @@
       haptic();
       const t = b.dataset.tab;
       favFilter = null; wrongFilter = null;
-      nav.stack = [{ v: t, p: {}, sc: 0 }];
+      nav.stack = [{ v: t === 'library' ? 'library' : t, p: {}, sc: 0 }];
       render(true);
     });
     window.addEventListener('scroll', function () {

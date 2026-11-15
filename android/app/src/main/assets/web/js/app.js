@@ -2,7 +2,7 @@
 /*
  * 派立方408 — 移动端刷题（全本地数据，无网络请求）
  *
- * 架构约定（v2.1.2 维护版）：
+ * 架构约定（v2.2.0）：
  *   - paint()     页面级导航渲染：async，重建骨架 / 头部 / 底栏，带 viewSeq 竞态保护。
  *   - refresh()   同页数据变更：async，仅替换 #page 节点内容，保留头部 / 底栏 / 滚动位置。
  *   - 高频交互（主题、题型、筛选、收藏星标、清空）走局部 DOM 更新，不整页刷新。
@@ -12,7 +12,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = (window.PAI408_VERSION && window.PAI408_VERSION.name) || '2.1.2';
+  const APP_VERSION = (window.PAI408_VERSION && window.PAI408_VERSION.name) || '2.2.0';
 
   const SUBJECTS = [
     { id: 'ds', name: '数据结构', short: '数据结构', hue: 235 },
@@ -35,7 +35,7 @@
   const MODE_VIEW = 'view';
   const MODE_DO = 'do';
   const TAB_ROOTS = ['home', 'library', 'wrong', 'me'];
-  const TITLES = { home: '派立方408', library: '资料库', fav: '收藏', wrong: '错题', me: '我的', study: '学习时间', subject: '科目', quiz: '练习' };
+  const TITLES = { home: '派立方408', library: '资料库', fav: '收藏', wrong: '错题', me: '我的', study: '学习时间', ach: '成就', subject: '科目', quiz: '练习' };
   const HDR_LABELS = { home: 'PAI CUBE · 408', library: 'STUDY LIBRARY', wrong: 'REVIEW NOTES', me: 'YOUR STUDY SPACE' };
   const HDR_ART = {
     home: '<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><path d="M12 13h16M15 13l7 15m7-15-7 15"/><circle cx="20" cy="20" r="2" class="fill"/></svg>',
@@ -529,6 +529,7 @@
     const m = Math.floor(sec / 60);
     return m < 60 ? m + ' 分钟' : Math.floor(m / 60) + ' 小时 ' + m % 60 + ' 分钟';
   }
+
   function studyPreview(data) {
     let h = '<span class="heat-preview" aria-hidden="true">';
     for (let i = 27; i >= 0; i--) {
@@ -677,6 +678,383 @@
 
   /* ================= 视图 ================= */
   const VIEWS = {};
+
+  /* ================= 成就系统 =================
+     未解锁的成就一律不公示内容（名称/描述均隐藏为 ???）。
+     解锁记录 { id: { ts: 解锁时间 } } 存本地。 */
+  const LS_ACH = 'p408.ach.v1';
+
+  /** 判定函数按需读取进度；返回 true 表示已达成。 */
+  const ACHIEVEMENTS = [
+    {
+      id: 'veteran', name: '派立方元老',
+      desc: '在 3.0 版本发布之前就开始使用派立方408',
+      test: () => true // 上线即达成：所有 v2.x 用户都是元老
+    },
+    {
+      id: 'beacon', name: '灯塔',
+      desc: '点击「上传资料，照亮更多人的路」，让题库因你更完整',
+      test: () => read(LS_ACH + '.beacon', false) === true
+    },
+    {
+      id: 'king_ds', name: '数据结构之王',
+      desc: '数据结构板块刷题累计 200 道',
+      test: () => subjStat('ds').done >= 200
+    },
+    {
+      id: 'king_os', name: '操作系统之王',
+      desc: '操作系统板块刷题累计 200 道',
+      test: () => subjStat('os').done >= 200
+    },
+    {
+      id: 'king_co', name: '计算机组成原理之王',
+      desc: '计算机组成原理板块刷题累计 200 道',
+      test: () => subjStat('co').done >= 200
+    },
+    {
+      id: 'king_cn', name: '计算机网络之王',
+      desc: '计算机网络板块刷题累计 200 道',
+      test: () => subjStat('cn').done >= 200
+    },
+    {
+      id: 'emperor', name: '408 的帝皇',
+      desc: '四个板块的选择题进度均达到 80%',
+      test: () => SUBJECTS.every(s => {
+        const tot = totalOf(s.id, 'x');
+        const done = s.id === 'ds' ? secStatAll(s.id, 'x') : secStatAll(s.id, 'x');
+        return tot > 0 && done / tot >= 0.8;
+      })
+    },
+    {
+      id: 'star_night', name: '夜空中最亮的星',
+      desc: '在凌晨 0 点到早上 6 点之间打开过应用',
+      test: () => read(LS_ACH + '.night', false) === true
+    },
+    {
+      id: 'sweat', name: '汗水铸就王座',
+      desc: '单日刷题时间达到 3 小时',
+      test: () => {
+        const study = read(LS.study, {});
+        return Object.keys(study).some(key =>
+          Object.values(study[key]).reduce((a, x) => a + x, 0) >= 3 * 3600);
+      }
+    },
+    {
+      id: 'diligence', name: '勤能补拙',
+      desc: '累计历史错题达到 100 道',
+      test: () => {
+        // 历史错题总数：wrong 列表累计 cnt + 已被答对移出的也计入
+        const wrong = store.wrong.reduce((a, x) => a + (x.cnt || 1), 0);
+        const pos = store.pos;
+        let answered = 0, okCount = 0;
+        for (const s in pos) for (const c in pos[s]) for (const k in pos[s][c]) {
+          for (const n in pos[s][c][k]) {
+            answered++;
+            if (pos[s][c][k][n].ok) okCount++;
+          }
+        }
+        // 历史错题 = 总作答次数 - 答对次数（同一题多次答错均计入）
+        return (answered - okCount) >= 100;
+      }
+    },
+    {
+      id: 'december', name: '追梦赤子心',
+      desc: '每年 12 月打开应用，为梦想做最后冲刺',
+      note: '放手一搏，神挡杀神，佛挡杀佛！',
+      test: () => new Date().getMonth() === 11
+    }
+  ];
+
+  // 修正 emperor 的判定实现（避免上面对象内冗余表达式）
+  function secStatAll(subj, kind) {
+    const p = store.pos[subj] || {};
+    let done = 0;
+    for (const c in p) {
+      const m = p[c] && p[c][kind];
+      if (m) done += Object.keys(m).length;
+    }
+    return done;
+  }
+  ACHIEVEMENTS.find(a => a.id === 'emperor').test = function () {
+    return SUBJECTS.every(s => {
+      const tot = totalOf(s.id, 'x');
+      return tot > 0 && secStatAll(s.id, 'x') / tot >= 0.8;
+    });
+  };
+
+  function achStore() { return read(LS_ACH, {}); }
+  function achUnlocked(id) { const s = achStore(); return !!(s[id] && s[id].ts); }
+  function achCount() { return Object.keys(achStore()).filter(k => achStore()[k] && achStore()[k].ts).length; }
+  function achUnlock(id) {
+    if (achUnlocked(id)) return false;
+    const s = achStore();
+    s[id] = { ts: Date.now() };
+    write(LS_ACH, s);
+    return true;
+  }
+  /** 检查全部成就，返回本次新解锁的数组 */
+  function achEvaluate() {
+    const fresh = [];
+    ACHIEVEMENTS.forEach(a => {
+      let ok = false;
+      try { ok = !!a.test(); } catch (e) { ok = false; }
+      if (ok && achUnlock(a.id)) fresh.push(a);
+    });
+    return fresh;
+  }
+
+  /* ---- 成就解锁提醒：小卡片排队展示，自动消失，点击可关 ---- */
+  const achToastQueue = [];
+  let achToastShowing = false;
+  function notifyAchievements(list) {
+    if (!list || !list.length) return;
+    list.forEach(a => achToastQueue.push(a));
+    pumpAchToast();
+  }
+  /** 评估 + 弹提醒的统一入口；静默模式只评估不弹（用于启动时批量补评估） */
+  function achEvaluateNotify(silent) {
+    const fresh = achEvaluate();
+    if (!silent) notifyAchievements(fresh);
+    return fresh;
+  }
+  function pumpAchToast() {
+    if (achToastShowing || !achToastQueue.length) return;
+    const a = achToastQueue.shift();
+    achToastShowing = true;
+    showAchToast(a, () => {
+      achToastShowing = false;
+      pumpAchToast();
+    });
+  }
+  function showAchToast(a, done) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ach-toast-wrap';
+    const quoteHtml = a.note ? '<div class="ach-toast-quote">「' + esc(a.note) + '」</div>' : '';
+    wrap.innerHTML = '<div class="ach-toast-card">' +
+      '<div class="ach-toast-head"><span class="ach-badge">✓</span>' +
+      '<span class="ach-toast-title"><small>成就解锁</small><b>' + esc(a.name) + '</b></span></div>' +
+      '<div class="ach-toast-desc">' + esc(a.desc) + '</div>' + quoteHtml +
+      '</div>';
+    document.body.appendChild(wrap);
+    requestAnimationFrame(() => wrap.classList.add('in'));
+    const close = () => {
+      if (!wrap.parentNode) return;
+      wrap.classList.remove('in');
+      setTimeout(() => { wrap.remove(); done(); }, 260);
+    };
+    // 点击任意位置关闭；3.4s 自动消失
+    wrap.addEventListener('click', close);
+    setTimeout(close, 3400);
+  }
+  function fmtAchTime(ts) {
+    const d = new Date(ts);
+    return d.getFullYear() + ' 年 ' + (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日解锁';
+  }
+
+  function renderAchCard(a) {
+    const unlocked = achUnlocked(a.id);
+    if (!unlocked) {
+      return '<button class="li ach" data-ach="' + a.id + '">' +
+        '<span class="ach-badge locked">?</span>' +
+        '<span class="li-main"><span class="li-t">??? 未解锁</span>' +
+        '<span class="li-s">继续努力，解锁后在此公示</span></span>' +
+        '<span class="li-r"><i class="chev"></i></span></button>';
+    }
+    return '<button class="li ach unlocked" data-ach="' + a.id + '">' +
+      '<span class="ach-badge">✓</span>' +
+      '<span class="li-main"><span class="li-t">' + esc(a.name) + '</span>' +
+      '<span class="li-s">' + esc(a.desc) + '</span>' +
+      '<span class="li-s ach-ts">' + esc(fmtAchTime(achStore()[a.id].ts)) + '</span></span></button>';
+  }
+
+  VIEWS.ach = async function (page) {
+    // 进入时统一评估一次
+    // 进入成就页时全量评估；新解锁用小卡片依次提醒
+    achEvaluateNotify();
+    const unlockedN = achCount();
+    let html = '<div class="hero ach-hero"><h2>成就</h2>' +
+      '<p>用里程碑标记这段备考旅程</p>' +
+      '<div class="hero-row"><div class="hero-kpi"><b>' + unlockedN + '</b><span>已解锁</span></div>' +
+      '<div class="hero-kpi"><b>' + ACHIEVEMENTS.length + '</b><span>成就总数</span></div></div></div>' +
+      '<div class="sec-title">已解锁 <span class="more">' + unlockedN + '/' + ACHIEVEMENTS.length + '</span></div><div class="list">';
+    const unlockedList = ACHIEVEMENTS.filter(a => achUnlocked(a.id));
+    html += unlockedList.length
+      ? unlockedList.map(renderAchCard).join('')
+      : '<div class="empty compact">还没有解锁任何成就<br>每一道题、每一天坚持都在积累</div>';
+    html += '</div>';
+    const locked = ACHIEVEMENTS.filter(a => !achUnlocked(a.id));
+    html += '<div class="sec-title">未解锁</div><div class="list" style="margin-bottom:8px">' +
+      locked.map(renderAchCard).join('') + '</div>';
+    html += '<p class="li-s" style="padding:10px 6px 0">未解锁的成就不公示内容，解锁后才会显示名称与条件。</p>';
+    page.innerHTML = html;
+    // 追梦赤子心：解锁时详情弹层展示专属寄语
+    delegate(page, 'click', '[data-ach="december"]', () => {
+      if (achUnlocked('december')) {
+        openSheet('追梦赤子心', [], null, b => {
+          b.innerHTML = '<div class="form-pad ach-quote">「放手一搏，神挡杀神，佛挡杀佛！」</div>';
+        });
+      }
+    });
+  };
+
+  /* ================= 连续打卡 ================= */
+  const LS_STREAK = 'p408.streak.v1';
+  const DAILY_QUOTES = [
+    '上岸的路上，每一步都算数。',
+    '你今天刷的题，是考场上的底气。',
+    '再坚持一下，答案就在下一题。',
+    '错题不可怕，可怕的是不订正。',
+    '专注当下这一题，未来会感谢现在的你。',
+    '考研没有奇迹，只有积累的轨迹。',
+    '慢慢来，比较快。',
+    '今天的你，比昨天更强了一点。',
+    '把手机放下的那一刻，你已经赢了一半。',
+    '流水不争先，争的是滔滔不绝。',
+    '你的对手也在熬夜，但你不必焦虑，只需坚持。',
+    '题海无涯，回头有岸——岸就是你刷过的错题。',
+    '一个知识点一个坑，填完就上岸。',
+    '感觉难的时候，说明你正在上坡。',
+    '别慌，月亮也正在大海某处迷茫。',
+    '把「我不会」变成「我学会了」。',
+    '日拱一卒，功不唐捐。',
+    '每一道错题都是上岸路上的路标。',
+    '现在的汗水，是十二月答题卡上的墨水。',
+    '稳住，我们能赢。',
+    '你不孤独，408 人都在同一片题海里。',
+    '今天的打卡，是对未来的自己负责。',
+    '别急着看结果，先把这一章刷完。',
+    '复习不是重复，是把知识焊进脑子里。',
+    '休息是为了走更远的路，但今天先走两步。',
+    '凌晨的图书馆，藏着上岸的密码。',
+    '真题虐我千百遍，我待真题如初恋。',
+    '知识点串成线，题目就成纸糊的了。',
+    '与其焦虑排名，不如多刷两道题。',
+    '上岸的人不是不累，只是没停。',
+    '每天进步一点点，十二月惊艳所有人。',
+    '你的笔记，就是你的武功秘籍。',
+    '再长的章节列表，也是一页一页翻完的。',
+    '把今天的计划打完勾，睡觉都更香。',
+    '错题本厚一分，考场上心就稳一分。',
+    '你刷的不是题，是奖学金和录取通知书。',
+    '专注是最贵的天赋，而你正在练习它。',
+    '别人的模板是别人的，你的错题是你的。',
+    '夏天的蝉鸣会停，你的努力不会。',
+    '秋天收到书的那天，你会感谢现在。',
+    '背了忘、忘了背，是每个上岸者的必经之路。',
+    '不要在最能吃苦的年纪选择安逸。',
+    '所有的大神，都是从错到对刷出来的。',
+    '这一章很难，所以它值得你赢一次。',
+    '今天不打鸡血，只打卡。',
+    '进度条再慢，也在往前爬。',
+    '你与上岸之间，只差一个坚持。',
+    '真题刷三遍，考点自然现。',
+    '别让手机比你更懂考研。',
+    '把焦虑写进计划里，然后一道一道消灭。',
+    '付出未必立刻有回报，但一定有账可查。',
+    '你在题海里游得越远，考试的水就越浅。',
+    '坚持不下去的时候，再坚持一下就是分。',
+    '每一页 A4 纸，都是通往录取通知书的邮票。',
+    '知识点不怕多，怕的是你不去碰。',
+    '英语单词和政治大题之外，408 也在等你。',
+    '模拟考砸了不要紧，考场上砸了才要紧。',
+    '现在的每一分，都是十二月抢来的。',
+    '你只需要赢过昨天的自己。',
+    '别刷短视频了，来刷真题吧。',
+    '天气冷了，进度别冷。',
+    '每一个「已掌握」，都曾是一道错题。',
+    '成功不写捷径，只写打卡记录。',
+    '你写下的每一行代码，都在给初试加分。',
+    '困了就趴五分钟，醒来继续。上岸的人都是这么过来的。',
+    '星星不发朋友圈，但它一直在发光。',
+    '计算机网络的分包，就像你把大目标拆成小题。',
+    '排序要稳定，你也要稳定。',
+    '树长得慢，是因为根扎得深。学习也一样。',
+    '与 其 焦 虑 ，不 如 翻 书 。',
+    '数据结构学好了，人生结构也不会差。',
+    '别怕题目刁钻，考场上它比你更怕。',
+    '你以为的瓶颈期，其实是沉淀期。',
+    '把错题再做一遍，等于考场上少丢一分。',
+    '别人的进度是参考，你的错题是答案。',
+    '上岸者的共同点：从没有一天是白过的。',
+    '别小看今天的 40 分钟，30 天就是一整章。',
+    '分数不会辜负任何一个认真订正的人。',
+    '把「考不上怎么办」换成「这道题怎么解」。',
+    '所有的逆袭，都是有备而来。',
+    '就算题目再难，解析总会照亮它。',
+    '水滴石穿不是水的力量，是坚持的力量。',
+    '十一月的冷风吹不灭十二月的战意。',
+    '带牙签上场不如带笔，带笔不如带脑子，脑子靠每天刷题养。',
+    '你现在多刷的每道题，都是考场上少皱的一次眉。',
+    '模考的分数是浮标，真水平在你错题本里。',
+    '不想刷的时候，就想想查分那天。',
+    '你和自己约好的上岸，别失约。',
+    '坚持到考完的那一刻，你已经赢了大多数人。',
+    '书翻旧了，人就翻新了。',
+    '上岸的路上不堵车，因为坚持的人不多。',
+    '保持节奏，不被别人的进度打乱阵脚。',
+    '把最难啃的章节留在状态最好的时候。',
+    '计划不在多完美，在于每天都执行。',
+    '深夜的台灯，是梦想的聚光灯。',
+    '考场上的从容，是每天打卡养出来的。',
+    '十二月见真章，但现在请先打开今天的题。',
+    '你现在流的汗，十二月会变成光。',
+    '备考是一场长跑，你已经在跑道上了。',
+    '今天也是离梦想更近的一天，晚安，408 人。'
+  ];
+  function todayKey(d) {
+    d = d || new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function prevDayKey() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return todayKey(d);
+  }
+  function streakData() { return read(LS_STREAK, { days: [], lastQuote: -1 }); }
+  function streakCount() { return streakData().days.length; }
+
+  /** 每日首次打开时调用；返回 { streak, quote } 或 null（今天已打过卡） */
+  function checkinToday() {
+    const today = todayKey();
+    const st = streakData();
+    if (st.days.indexOf(today) >= 0) return null;
+    const yesterday = prevDayKey();
+    const hadYesterday = st.days.indexOf(yesterday) >= 0;
+    // 连续天数：昨天有卡则 +1，否则重置为 1
+    const streak = hadYesterday ? st.streak ? st.streak + 1 : 2 : 1;
+    // 每日一句：100 条循环；同一天重复打开不重复消耗
+    const idx = ((st.lastQuote == null ? -1 : st.lastQuote) + 1) % DAILY_QUOTES.length;
+    const quote = DAILY_QUOTES[idx];
+    st.days.push(today);
+    if (st.days.length > 400) st.days = st.days.slice(-400);
+    st.streak = streak;
+    st.lastQuote = idx;
+    st.lastCheckin = today;
+    write(LS_STREAK, st);
+    return { streak: streak, quote: quote };
+  }
+
+  /** 打卡弹窗：点击空白处关闭 */
+  function showCheckinPopup(streak, quote) {
+    const wrap = document.createElement('div');
+    wrap.className = 'checkin-wrap';
+    wrap.innerHTML = '<div class="checkin-mask"></div>' +
+      '<div class="checkin-card">' +
+      '<div class="checkin-fire">π</div>' +
+      '<div class="checkin-days"><b>' + streak + '</b><span>连续打卡天数</span></div>' +
+      '<div class="checkin-quote">「' + esc(quote) + '」</div>' +
+      '<div class="checkin-hint">点击空白处关闭 · 明天也要来打卡</div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    requestAnimationFrame(() => wrap.classList.add('in'));
+    const close = () => {
+      wrap.classList.remove('in');
+      setTimeout(() => wrap.remove(), 280);
+    };
+    wrap.querySelector('.checkin-mask').addEventListener('click', close);
+    // 打卡即评估成就（十二月/夜星等），新解锁排队弹小卡片
+    achEvaluateNotify();
+  }
 
   /* ---------- 首页 ---------- */
   VIEWS.home = async function (page) {
@@ -1134,6 +1512,8 @@
     else { wrongAdd(it, '做错', '（自评做错）'); toast('已加入错题本'); }
     haptic();
     renderQ();
+    // 刷题可能触发「之王」系列/帝皇/勤能补拙等成就
+    achEvaluateNotify();
   }
 
   function finishQuiz() {
@@ -1387,15 +1767,61 @@
     ['组成原理基础考点讲解', 'https://pan.quark.cn/s/b1c6047ef3f0'],
     ['27 王道课后习题做题本', 'https://pan.quark.cn/s/8bc1c262534b']
   ];
+
+  /** 模糊匹配，三级递进：
+   *  1. 子串命中（「真题」→「408统考真题」）
+   *  2. 子序列命中（「机组题」→「计算机组成原理真题」）
+   *  3. 字符集兜底：查询的每个字符都出现在标题中（「机组」→「组成原理…」） */
+  function fuzzyMatch(text, query) {
+    text = String(text || '').toLowerCase();
+    query = String(query || '').toLowerCase().trim();
+    if (!query) return true;
+    if (text.indexOf(query) >= 0) return true;
+    let i = 0;
+    for (let j = 0; j < text.length && i < query.length; j++) {
+      if (text[j] === query[i]) i++;
+    }
+    if (i === query.length) return true;
+    for (let k = 0; k < query.length; k++) {
+      if (text.indexOf(query[k]) < 0) return false;
+    }
+    return true;
+  }
+
+  function libListHtml(query) {
+    const items = LIBRARY
+      .map((x, i) => ({ t: x[0], u: x[1], i: i }))
+      .filter(x => fuzzyMatch(x.t, query));
+    if (!items.length) {
+      return '<div class="empty compact">没有匹配「' + esc(query) + '」的资料<br>换个关键词试试，或投稿补充</div>';
+    }
+    return '<div class="list">' + items.map(x =>
+      '<button class="li" data-lib="' + x.i + '"><span class="li-num">↗</span>' +
+      '<span class="li-main"><span class="li-t">' + esc(x.t) + '</span>' +
+      '<span class="li-s">夸克网盘 · 学习资料</span></span>' +
+      '<span class="li-r"><i class="chev"></i></span></button>').join('') + '</div>';
+  }
+
   VIEWS.library = async function (page) {
     page.innerHTML = '<div class="hero"><h2>资料库</h2>' +
       '<p>整理的 408 学习资料，点击后使用夸克网盘打开</p></div>' +
-      '<div class="list">' + LIBRARY.map((x, i) =>
-        '<button class="li" data-lib="' + i + '"><span class="li-num">↗</span>' +
-        '<span class="li-main"><span class="li-t">' + esc(x[0]) + '</span>' +
-        '<span class="li-s">夸克网盘 · 学习资料</span></span>' +
-        '<span class="li-r"><i class="chev"></i></span></button>').join('') + '</div>' +
+      '<div class="lib-search">' +
+      '<input class="inp" id="lib-search" type="text" placeholder="搜索资料名称，支持模糊匹配" autocomplete="off">' +
+      '</div>' +
+      '<button class="upload-card" id="upload-card"><span class="upload-copy">' +
+      '<b>上传资料，照亮更多人的路</b>' +
+      '<i>你的笔记与好资料，可能正是别人正在找的灯</i></span>' +
+      '<span class="upload-pi" aria-hidden="true">π</span></button>' +
+      '<div id="lib-list">' + libListHtml('') + '</div>' +
       '<p class="li-s" style="padding:12px">资料仅供学习交流，请尊重版权，不要二次贩卖。</p>';
+
+    // 搜索：只更新列表容器，输入状态与滚动位置不受影响
+    const searchInput = $('#lib-search', page);
+    searchInput.addEventListener('input', () => {
+      const box = $('#lib-list', page);
+      if (box) box.innerHTML = libListHtml(searchInput.value);
+    });
+
     delegate(page, 'click', '[data-lib]', (e, el) => {
       const url = LIBRARY[Number(el.dataset.lib)][1];
       const openLink = () => {
@@ -1410,6 +1836,30 @@
       confirmSheet('资料仅限个人学习交流，请遵守版权要求，禁止二次贩卖。是否继续？', () => {
         try { localStorage.setItem(LS.library, '1'); } catch (err) { /* 忽略 */ }
         openLink();
+      });
+    });
+
+    // 投稿卡片：展示邮箱 + 解锁「灯塔」成就
+    delegate(page, 'click', '#upload-card', () => {
+      haptic();
+      // 手动解锁的成就不会出现在 achEvaluate 的增量里，直接推入提醒队列
+      if (achUnlock('beacon')) notifyAchievements([ACHIEVEMENTS.find(a => a.id === 'beacon')]);
+      achEvaluateNotify();
+      openSheet('上传资料，照亮更多人的路', [], null, body => {
+        body.innerHTML = '<div class="form-pad">' +
+          '<p style="margin:0 0 12px;font-size:13.5px;line-height:1.9;color:var(--ink2)">' +
+          '如果你有整理好的笔记、真题、习题册等文档类资料，欢迎分享给更多 408 人：' +
+          '把<b>资料名称</b>与<b>网盘链接</b>发送到下方邮箱，通过筛选后会在资料库中分享。</p>' +
+          '<div class="mail-row"><span class="mail-addr">2115729051@qq.com</span></div>' +
+          '<button class="btn-primary" id="copy-mail" style="margin-top:14px">复制邮箱</button></div>';
+        $('#copy-mail', body).onclick = () => {
+          const mail = '2115729051@qq.com';
+          try {
+            if (window.AndroidBridge && AndroidBridge.copyText) AndroidBridge.copyText(mail);
+            else if (navigator.clipboard) navigator.clipboard.writeText(mail);
+            toast('邮箱已复制，去发邮件吧');
+          } catch (err) { toast(mail); }
+        };
       });
     });
   };
@@ -1574,6 +2024,11 @@
       '<span class="li-main"><span class="li-t">收藏夹</span>' +
       '<span class="li-s">' + favFolders().length + ' 个收藏夹 · ' + favTotal() + ' 道题</span></span>' +
       '<span class="li-r"><i class="chev"></i></span></button></div>' +
+      '<div class="sec-title">成就</div><div class="list">' +
+      '<button class="li" id="open-ach"><span class="li-num">★</span>' +
+      '<span class="li-main"><span class="li-t">我的成就</span>' +
+      '<span class="li-s">已解锁 ' + achCount() + ' / ' + ACHIEVEMENTS.length + ' 项 · 继续加油</span></span>' +
+      '<span class="li-r"><i class="chev"></i></span></button></div>' +
       '<div class="sec-title">偏好设置</div><div class="list">' +
       '<div class="li"><span class="li-main"><span class="li-t">主题</span></span>' +
       '<span class="li-r"><button class="btn-sm" id="set-theme">' +
@@ -1606,12 +2061,15 @@
       el.textContent = nx === 'dark' ? '深色' : nx === 'light' ? '浅色' : '跟随系统';
     });
     delegate(page, 'click', '#open-fav', () => go('fav', {}));
+    delegate(page, 'click', '#open-ach', () => go('ach', {}));
     delegate(page, 'click', '#open-study', () => go('study', {}));
     delegate(page, 'click', '#act-update', () => openSheet('V' + APP_VERSION + ' 更新说明', [], null, b => {
-      b.innerHTML = '<div class="form-pad">V' + APP_VERSION + ' 为问题修复版本：' +
-        '答题换题时收藏星标现在跟随当前题目状态；错题本与收藏夹切换筛选改为只局部更新列表，' +
-        '筛选栏横向位置与页面滚动位置保持不变；「数据与关于」新增 GitHub 发行版直达入口。' +
-        '功能与题库不变。</div>';
+      b.innerHTML = '<div class="form-pad update-note">' +
+        '<p><b>资料库</b>：顶部新增搜索框，支持模糊匹配即时过滤；新增「上传资料，照亮更多人的路」投稿卡片，点击可查看投稿邮箱。</p>' +
+        '<p><b>连续打卡</b>：每天首次打开应用会弹出打卡卡片，显示连续打卡天数与每日一句鼓励语。</p>' +
+        '<p><b>成就系统</b>：「我的」新增成就入口，去解锁只属于你的里程碑吧。</p>' +
+        '<p><b>其他</b>：清空学习数据时成就与打卡记录会保留；题库与功能范围不变，数据本地保存无需迁移。</p>' +
+        '</div>';
     }));
     delegate(page, 'click', '#act-contact', () => openSheet('联系开发者', [], null, b => {
       b.innerHTML = '<div class="form-pad">GitHub：在项目页面提交 Issue<br><br>小红书：1895737550<br><br>相关帖子评论区留言</div>';
@@ -1626,7 +2084,9 @@
     delegate(page, 'click', '#act-eula', () => showEula(false));
     delegate(page, 'click', '#act-export', () => exportData());
     delegate(page, 'click', '#act-clear', () => {
-      confirmSheet('确定清空所有学习数据？进度、错题、收藏都会被删除，此操作不可恢复。', () => {
+      confirmSheet('确定清空所有学习数据？进度、错题、收藏、计划与学习时长都会被删除；成就与打卡记录会保留。此操作不可恢复。', () => {
+        // 注意：成就（LS_ACH）与打卡记录（LS_STREAK）刻意不在清除列表中，
+        // 荣誉记录不随学习数据清空而消失。
         [LS.pos, LS.wrong, LS.fav, LS.plans, LS.study].forEach(k => {
           try { localStorage.removeItem(k); } catch (err) { /* 忽略 */ }
         });
@@ -1832,11 +2292,21 @@
   /* ================= 启动 ================= */
   function boot() {
     applyTheme();
+    // 「夜空中最亮的星」：凌晨 0-6 点打开应用即留痕
+    if (new Date().getHours() < 6) {
+      try { localStorage.setItem(LS_ACH + '.night', '1'); } catch (e) { /* 忽略 */ }
+    }
+    // 启动静默评估一次成就（元老/十二月/夜星等无需额外操作的类型），
+    // 不弹卡片：避免老用户升级后首启被补发的成就轰炸
+    achEvaluateNotify(true);
     let agreed = false;
     try { agreed = localStorage.getItem(EULA_KEY) === '1'; } catch (e) { /* 忽略 */ }
     startupAt = Date.now();
     if (!agreed) showEula(true);
     initNav();
+    // 每日首次打开：连续打卡弹窗（等待首页渲染与启动页淡出后再出现）
+    const ck = checkinToday();
+    if (ck) setTimeout(() => showCheckinPopup(ck.streak, ck.quote), 900);
   }
 
   function finishStartup() {
@@ -1881,6 +2351,12 @@
 
   /* Android 返回键 */
   window.AppBack = function () {
+    const ckEl = document.querySelector('.checkin-wrap');
+    if (ckEl) {
+      const m = ckEl.querySelector('.checkin-mask');
+      if (m) m.click();
+      return true;
+    }
     const sheetEl = $('#sheet');
     if (sheetEl && !sheetEl.classList.contains('hidden')) { closeSheet(); return true; }
     const el = $('#eula');

@@ -1299,6 +1299,16 @@
   function onOptionClick(letter) {
     if (!Q || cur().v !== 'quiz' || isRevealed() || Q.isBig) return;
     haptic();
+    // 多空题（答案位数 > 选项数）：按点击顺序累积，允许重复同一字母
+    if (Q.isMultiBlank) {
+      if (!Q.seq) Q.seq = [];
+      if (Q.seq.length >= Q.ans.length) Q.seq.shift();  // 满了就滚动替换最早的
+      Q.seq.push(letter);
+      paintOpts();
+      const sub = $('#btn-submit');
+      if (sub) sub.disabled = Q.seq.length === 0;
+      return;
+    }
     if (!Q.multi) Q.sel.clear();
     if (Q.sel.has(letter)) Q.sel.delete(letter); else Q.sel.add(letter);
     paintOpts();
@@ -1310,12 +1320,35 @@
     const optsEl = $('#opts');
     if (!optsEl || !Q) return;
     const revealed = isRevealed();
+    // 多空题：用序号角标显示点击顺序
+    const seqCount = {};
+    if (!revealed && Q.isMultiBlank && Q.seq) {
+      Q.seq.forEach((L, i) => {
+        seqCount[L] = seqCount[L] || [];
+        seqCount[L].push(i + 1);
+      });
+    }
     $$('.opt', optsEl).forEach(o => {
       o.classList.remove('sel', 'right', 'wrong', 'dim');
       const L = o.dataset.l;
-      if (!revealed) { if (Q.sel.has(L)) o.classList.add('sel'); return; }
+      const badge = o.querySelector('.seq-badge');
+      if (badge) badge.remove();
+      if (!revealed) {
+        if (Q.isMultiBlank) {
+          if (seqCount[L]) {
+            o.classList.add('sel');
+            const b = document.createElement('span');
+            b.className = 'seq-badge';
+            b.textContent = seqCount[L].join(',');
+            o.appendChild(b);
+          }
+          return;
+        }
+        if (Q.sel.has(L)) o.classList.add('sel');
+        return;
+      }
       if (Q.ans.indexOf(L) >= 0) o.classList.add('right');
-      else if (Q.sel.has(L)) o.classList.add('wrong');
+      else if ((Q.isMultiBlank ? Q.seq && Q.seq.indexOf(L) >= 0 : Q.sel.has(L))) o.classList.add('wrong');
       else o.classList.add('dim');
     });
   }
@@ -1373,6 +1406,12 @@
     Q.multi = Q.ans.length > 1;
     Q.sel = new Set(rec && rec.mine ? String(rec.mine).split('') : []);
     const opts = q[4] || [];
+    // 选项数用于区分「普通多选」与「多空题」：多空题答案位数可多于选项数
+    // （如 4 个选项、答案 BDDCBA 表示 6 个空各选一个）
+    Q.optsCount = opts.length || 4;
+    // 多空题：答案位数多于选项数（如 4 选项、答案 BDDCBA 表示 6 个空）
+    Q.isMultiBlank = Q.ans.length > Q.optsCount;
+    Q.seq = Q.isMultiBlank && rec && rec.mine ? String(rec.mine).split('') : [];
 
     let h = '<div class="qcard" style="margin-top:12px"><div class="opts" id="opts">';
     if (opts.length) {
@@ -1411,7 +1450,10 @@
           renderQ();
         };
         $('#btn-submit', barRoot).onclick = () => {
-          const mine = Array.from(Q.sel).sort().join('');
+          // 多空题（答案长度 > 选项数，如 BDDCBA 对应 6 个空）必须按点击顺序比对；
+          // 普通多选（答案如 BD）用排序后比对，避免选择顺序影响判分。
+          const picked = Q.isMultiBlank ? (Q.seq || []) : Array.from(Q.sel);
+          const mine = Q.isMultiBlank ? picked.join('') : picked.sort().join('');
           if (!mine) return toast('请先选择答案');
           submitAnswer(it, mine, mine === Q.ans, Q.ans);
         };
@@ -2065,10 +2107,11 @@
     delegate(page, 'click', '#open-study', () => go('study', {}));
     delegate(page, 'click', '#act-update', () => openSheet('V' + APP_VERSION + ' 更新说明', [], null, b => {
       b.innerHTML = '<div class="form-pad update-note">' +
-        '<p><b>资料库</b>：顶部新增搜索框，支持模糊匹配即时过滤；新增「上传资料，照亮更多人的路」投稿卡片，点击可查看投稿邮箱。</p>' +
-        '<p><b>连续打卡</b>：每天首次打开应用会弹出打卡卡片，显示连续打卡天数与每日一句鼓励语。</p>' +
-        '<p><b>成就系统</b>：「我的」新增成就入口，去解锁只属于你的里程碑吧。</p>' +
-        '<p><b>其他</b>：清空学习数据时成就与打卡记录会保留；题库与功能范围不变，数据本地保存无需迁移。</p>' +
+        '<p><b>题库勘误（本次重点）</b>：全部 2667 道题由人工逐题通读校订，修正了上标幂次被吞、' +
+        '对数与取整符号、字母数字混淆、编号错乱、代码与表格排版错位、教材页眉混入正文等大量问题，' +
+        '并重写了与题干不符的解析。原文损坏严重的题目已按考纲知识补全，并在解析末尾标注「已按考点补全」。</p>' +
+        '<p><b>勘误进度说明</b>：本次已完成绝大部分题目的勘误，但仍有<b>个别题目</b>可能存在错误或表述不准确。' +
+        '如果你在刷题时发现问题，欢迎通过「联系开发者」反馈，我会继续修订。</p>' +
         '</div>';
     }));
     delegate(page, 'click', '#act-contact', () => openSheet('联系开发者', [], null, b => {

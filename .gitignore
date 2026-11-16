@@ -35,3 +35,7 @@ desktop.ini
 *.log
 *.tmp
 shots/
+
+# ---- 产品介绍 PPT 工作目录（不上传 git）----
+ppt/
+*.pptx

@@ -1256,10 +1256,14 @@
   /* ---------- 刷题会话 ---------- */
   let Q = null;
 
-  function startQuiz(items, mode, ctx) {
+  function startQuiz(items, mode, ctx, startIndex) {
     if (!items.length) return toast('没有可选题目');
+    // startIndex 必须在 go() 之前写入：VIEWS.quiz 会立即 renderQ()，
+    // 若先渲染再用 Q.i= 改索引，画面会停留在第 1 题。
+    let i = 0;
+    if (Number.isInteger(startIndex) && startIndex >= 0 && startIndex < items.length) i = startIndex;
     Q = {
-      items: items, i: 0, mode: mode, ctx: ctx || {}, done: {},
+      items: items, i: i, mode: mode, ctx: ctx || {}, done: {},
       sel: new Set(), activeSince: 0, activeSubject: ''
     };
     go('quiz', {});
@@ -1792,8 +1796,8 @@
       const cur = await favBodyData();
       const arr = cur.list.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
       const idx = arr.findIndex(x => qid(x) === el.dataset.q);
-      startQuiz(arr, MODE_VIEW, { fav: true });
-      Q.i = Math.max(0, idx);
+      // 与错题本同理：下标必须在 go() 之前传入，否则会停在第一题
+      startQuiz(arr, MODE_VIEW, { fav: true }, Math.max(0, idx));
     });
   };
 
@@ -2039,8 +2043,9 @@
       const curData = await wrongBodyData();
       const arr = curData.list.map(x => ({ s: x.s, c: x.c, k: x.k, n: x.n }));
       const idx = arr.findIndex(x => qid(x) === el.dataset.q);
-      startQuiz(arr, MODE_VIEW, { wrong: true });
-      Q.i = Math.max(0, idx);
+      // 必须把目标下标作为 startQuiz 的参数传入：go() 里会立即 renderQ()，
+      // 若先渲染第一题再改 Q.i，画面不会刷新，表现为「点哪题都是第一题」。
+      startQuiz(arr, MODE_VIEW, { wrong: true }, Math.max(0, idx));
     });
   };
 
@@ -2107,11 +2112,13 @@
     delegate(page, 'click', '#open-study', () => go('study', {}));
     delegate(page, 'click', '#act-update', () => openSheet('V' + APP_VERSION + ' 更新说明', [], null, b => {
       b.innerHTML = '<div class="form-pad update-note">' +
-        '<p><b>题库勘误（本次重点）</b>：全部 2667 道题由人工逐题通读校订，修正了上标幂次被吞、' +
+        '<p><b>问题修复（本次重点）</b>：修复错题本中点击某道错题却总是显示第一题的问题——现在点击任意一道错题，都会准确进入对应的题目；收藏列表的同类问题也一并修复。</p>' +
+        '<p><b>题库勘误</b>（V2.3.0 起）：全部 2667 道题由人工逐题通读校订，修正了上标幂次被吞、' +
         '对数与取整符号、字母数字混淆、编号错乱、代码与表格排版错位、教材页眉混入正文等大量问题，' +
         '并重写了与题干不符的解析。原文损坏严重的题目已按考纲知识补全，并在解析末尾标注「已按考点补全」。</p>' +
-        '<p><b>勘误进度说明</b>：本次已完成绝大部分题目的勘误，但仍有<b>个别题目</b>可能存在错误或表述不准确。' +
+        '<p><b>勘误进度说明</b>：已完成绝大部分题目的勘误，但仍有<b>个别题目</b>可能存在错误或表述不准确。' +
         '如果你在刷题时发现问题，欢迎通过「联系开发者」反馈，我会继续修订。</p>' +
+        '<p><b>数据与功能</b>：题库数量与功能范围不变，数据本地保存，无需迁移；清空学习数据时成就与打卡记录会保留。</p>' +
         '</div>';
     }));
     delegate(page, 'click', '#act-contact', () => openSheet('联系开发者', [], null, b => {

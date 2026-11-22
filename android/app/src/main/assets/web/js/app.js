@@ -34,11 +34,12 @@
 
   const MODE_VIEW = 'view';
   const MODE_DO = 'do';
-  const TAB_ROOTS = ['home', 'library', 'wrong', 'me'];
-  const TITLES = { home: '派立方408', library: '资料库', fav: '收藏', wrong: '错题', me: '我的', study: '学习时间', ach: '成就', subject: '科目', quiz: '练习' };
-  const HDR_LABELS = { home: 'PAI CUBE · 408', library: 'STUDY LIBRARY', wrong: 'REVIEW NOTES', me: 'YOUR STUDY SPACE' };
+  const TAB_ROOTS = ['home', 'demo', 'wrong', 'me'];
+  const TITLES = { home: '派立方408', demo: '演示', library: '资料库', fav: '收藏', wrong: '错题', me: '我的', study: '学习时间', ach: '成就', subject: '科目', quiz: '练习' };
+  const HDR_LABELS = { home: 'PAI CUBE · 408', demo: 'ALGO DEMO', library: 'STUDY LIBRARY', wrong: 'REVIEW NOTES', me: 'YOUR STUDY SPACE' };
   const HDR_ART = {
     home: '<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><path d="M12 13h16M15 13l7 15m7-15-7 15"/><circle cx="20" cy="20" r="2" class="fill"/></svg>',
+    demo: '<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><path d="M16 13l12 7-12 7z" class="fill"/><path d="M20 4v4M20 32v4M4 20h4M32 20h4"/></svg>',
     library: '<svg viewBox="0 0 40 40"><path d="M7 11c5-2 9-1 13 2v19c-4-3-8-4-13-2zM33 11c-5-2-9-1-13 2v19c4-3 8-4 13-2z"/><path d="M11 16c2 0 4 .3 6 1m12-1c-2 0-4 .3-6 1M11 21c2 0 4 .3 6 1m12-1c-2 0-4 .3-6 1"/></svg>',
     wrong: '<svg viewBox="0 0 40 40"><rect x="9" y="8" width="22" height="25" rx="5"/><path d="M15 15h10m-10 6h4m8 0-5 6m0-6 5 6"/></svg>',
     me: '<svg viewBox="0 0 40 40"><circle cx="20" cy="14" r="6"/><path d="M8 32c1-7 5-10 12-10s11 3 12 10"/><path d="m29 8 1.5 3 3.5.5-2.5 2.5.6 3.5-3.1-1.7-3.1 1.7.6-3.5-2.5-2.5 3.5-.5z"/></svg>'
@@ -2049,6 +2050,35 @@
     });
   };
 
+  /* ---------- 算法演示 ---------- */
+  VIEWS.demo = async function (page, params) {
+    const Demo = window.Demo;
+    if (!Demo || !window.SV) {
+      page.innerHTML = '<div class="empty"><div class="ico">!</div>演示引擎未加载</div>';
+      return;
+    }
+    // 详情：params.id 指定模板
+    if (params && params.id) {
+      const tpl = (window.SV.templates || []).filter(t => t.id === params.id)[0];
+      if (!tpl) {
+        page.innerHTML = '<div class="empty">演示不存在</div>';
+        return;
+      }
+      cur().title = tpl.name;
+      $('#hdr-title').innerHTML = '<span class="hdr-submark" aria-hidden="true"></span>' +
+        '<span class="hdr-copy"><strong>' + esc(tpl.name) + '</strong></span>';
+      Demo.openDemo(page, tpl);
+      return;
+    }
+    // 入口：科目 → 分类 → 列表，支持搜索
+    const sub = (params && params.sub) || 'subject';
+    cur().title = (params && params.cat) ? (params.catName || '演示') : '演示';
+    Demo.renderEntry(page, sub, params || {}, (view, p) => {
+      haptic();
+      go('demo', p);
+    });
+  };
+
   /* ---------- 我的 ---------- */
   VIEWS.me = async function (page) {
     await ensureData(SUBJECTS.map(s => s.id));
@@ -2066,6 +2096,11 @@
       '<div class="stat-cell"><b>' + done + '</b><span>已练习</span></div>' +
       '<div class="stat-cell ok"><b>' + rate + '%</b><span>正确率</span></div>' +
       '<div class="stat-cell bad"><b>' + wrongCountBy() + '</b><span>错题</span></div></div>' +
+      '<div class="sec-title">学习资源</div><div class="list">' +
+      '<button class="li" id="open-library"><span class="li-num">▤</span>' +
+      '<span class="li-main"><span class="li-t">资料库</span>' +
+      '<span class="li-s">真题与资料 · 搜索与投稿</span></span>' +
+      '<span class="li-r"><i class="chev"></i></span></button></div>' +
       '<div class="sec-title">我的收藏</div><div class="list">' +
       '<button class="li" id="open-fav"><span class="li-num">★</span>' +
       '<span class="li-main"><span class="li-t">收藏夹</span>' +
@@ -2107,18 +2142,18 @@
       applyTheme();
       el.textContent = nx === 'dark' ? '深色' : nx === 'light' ? '浅色' : '跟随系统';
     });
+    delegate(page, 'click', '#open-library', () => go('library', {}));
     delegate(page, 'click', '#open-fav', () => go('fav', {}));
     delegate(page, 'click', '#open-ach', () => go('ach', {}));
     delegate(page, 'click', '#open-study', () => go('study', {}));
     delegate(page, 'click', '#act-update', () => openSheet('V' + APP_VERSION + ' 更新说明', [], null, b => {
       b.innerHTML = '<div class="form-pad update-note">' +
-        '<p><b>问题修复（本次重点）</b>：修复错题本中点击某道错题却总是显示第一题的问题——现在点击任意一道错题，都会准确进入对应的题目；收藏列表的同类问题也一并修复。</p>' +
-        '<p><b>题库勘误</b>（V2.3.0 起）：全部 2667 道题由人工逐题通读校订，修正了上标幂次被吞、' +
-        '对数与取整符号、字母数字混淆、编号错乱、代码与表格排版错位、教材页眉混入正文等大量问题，' +
-        '并重写了与题干不符的解析。原文损坏严重的题目已按考纲知识补全，并在解析末尾标注「已按考点补全」。</p>' +
-        '<p><b>勘误进度说明</b>：已完成绝大部分题目的勘误，但仍有<b>个别题目</b>可能存在错误或表述不准确。' +
-        '如果你在刷题时发现问题，欢迎通过「联系开发者」反馈，我会继续修订。</p>' +
-        '<p><b>数据与功能</b>：题库数量与功能范围不变，数据本地保存，无需迁移；清空学习数据时成就与打卡记录会保留。</p>' +
+        '<p><b>新增「演示」板块</b>：底部栏新增「演示」标签，覆盖数据结构、组成原理、操作系统、计算机网络四科共 111 个算法演示。' +
+        '每个演示都带伪代码逐步高亮和可视化过程，按板块、分类组织，点击即可进入。</p>' +
+        '<p><b>手动单步</b>：演示去掉了自动播放，改为「下一步 / 上一步」小按钮——点一下动一下，节奏完全由你掌控，方便边看边想。</p>' +
+        '<p><b>内容取舍</b>：演示只保留动画过程和伪代码，已去掉关联的真题解析，界面更清爽。所有演示均在手机端完成适配，可正常播放使用。</p>' +
+        '<p><b>底部栏调整</b>：「资料库」从底部栏移入「我的 → 资料库」，底部栏现在是首页、演示、错题、我的。</p>' +
+        '<p><b>数据说明</b>：题库数量与学习数据不变，无需迁移。</p>' +
         '</div>';
     }));
     delegate(page, 'click', '#act-contact', () => openSheet('联系开发者', [], null, b => {
